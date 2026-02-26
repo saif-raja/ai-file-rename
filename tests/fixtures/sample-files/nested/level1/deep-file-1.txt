@@ -1,0 +1,23 @@
+Level 1 Document - Project Architecture Overview
+
+This document describes the high-level architecture of the
+distributed processing system deployed across three data centers.
+
+Components:
+1. API Gateway (this level)
+   - Rate limiting
+   - Authentication
+   - Request routing
+
+2. Processing Layer (level 2)
+   - Worker nodes
+   - Task queue
+   - Load balancer
+
+3. Storage Layer (level 3)
+   - Primary database
+   - Object storage
+   - Cache cluster
+
+This file exists at the first level of nesting to test how
+the rename tool handles files in deeply nested directory structures.

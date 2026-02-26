@@ -1,0 +1,13 @@
+This file contains Unicode characters in its name:
+- é (e with acute accent)
+- Both in "café" and "résumé"
+
+Unicode filenames can cause issues with:
+- Older file systems (FAT32)
+- Some command-line tools
+- Cross-platform file sharing
+- NFC vs NFD normalization (especially on macOS)
+- URL encoding in web applications
+
+The rename tool should decide whether to preserve, transliterate,
+or strip non-ASCII characters based on its configuration.

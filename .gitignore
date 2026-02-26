@@ -1,0 +1,42 @@
+# Environment and secrets
+.env
+*.key
+credentials.json
+client_secrets.json
+token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tool state
+.ai-rename-manifest.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs (keep the directory but not log files)
+*.log

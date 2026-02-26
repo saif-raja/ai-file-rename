@@ -1,0 +1,7 @@
+This file has an all-uppercase name and extension.
+While technically valid on most file systems, it violates
+common naming conventions. The .PDF extension (uppercase)
+should ideally be normalized to .pdf (lowercase).
+
+This tests whether the rename tool normalizes file extensions
+and converts overly aggressive capitalization.

@@ -1,0 +1,29 @@
+Machine Learning Research Notes - Transformer Architecture Experiments
+=====================================================================
+
+Date: October 2023
+Researcher: Dr. Sarah Chen
+
+Experiment 1: Attention Head Pruning
+- Removed 30% of attention heads from BERT-base
+- Accuracy drop: only 1.2% on GLUE benchmark
+- Inference speedup: 23% on CPU, 18% on GPU
+- Conclusion: Significant redundancy exists in multi-head attention
+
+Experiment 2: Sparse Mixture of Experts
+- Implemented top-2 gating with 8 expert networks
+- Training compute reduced by ~40% vs dense equivalent
+- Quality parity achieved at 60% of the FLOPs
+- Key insight: Load balancing loss crucial for expert utilization
+
+Experiment 3: Knowledge Distillation with Chain-of-Thought
+- Teacher: GPT-4 level model (175B params)
+- Student: 7B parameter model
+- CoT distillation improved reasoning accuracy by 15% over standard distillation
+- Smaller models can learn structured reasoning patterns
+
+TODO:
+- [ ] Run ablation study on attention head pruning thresholds
+- [ ] Compare MoE routing strategies (hash vs learned vs random)
+- [ ] Test distillation with different teacher-student size ratios
+- [ ] Write up results for NeurIPS 2024 submission

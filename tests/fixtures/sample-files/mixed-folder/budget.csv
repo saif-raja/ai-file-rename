@@ -1,0 +1,14 @@
+department,category,q1_budget,q1_actual,q2_budget,q2_actual,q3_budget,q3_actual,q4_budget,notes
+Engineering,Salaries,850000,842000,875000,871000,900000,895000,920000,Includes 3 new hires in Q3
+Engineering,Cloud Infrastructure,120000,135000,130000,142000,140000,155000,150000,Over budget due to traffic spike
+Engineering,Software Licenses,45000,43000,45000,47000,50000,48000,50000,
+Marketing,Advertising,200000,195000,250000,268000,300000,285000,350000,Q4 includes holiday campaign
+Marketing,Events & Conferences,80000,72000,60000,58000,40000,35000,100000,AWS re:Invent in Q4
+Marketing,Content Production,35000,33000,35000,37000,40000,42000,45000,
+Sales,Commissions,180000,195000,190000,210000,200000,225000,220000,Exceeding targets consistently
+Sales,Travel,60000,55000,65000,70000,70000,68000,75000,
+Sales,Tools & CRM,25000,24000,25000,25000,28000,28000,28000,
+Operations,Office Lease,90000,90000,90000,90000,95000,95000,95000,Renewal in Q3 with 5% increase
+Operations,Utilities & Supplies,15000,14000,15000,13500,16000,15000,16000,
+HR,Recruiting,40000,52000,35000,45000,30000,38000,25000,High demand for senior engineers
+HR,Training & Development,20000,18000,22000,20000,25000,23000,28000,

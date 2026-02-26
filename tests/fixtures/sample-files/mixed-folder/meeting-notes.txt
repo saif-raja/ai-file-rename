@@ -1,0 +1,38 @@
+Project Phoenix - Sprint Planning Meeting
+Date: November 20, 2023
+Attendees: Sarah, Mike, Priya, James, Lin
+
+Agenda:
+1. Sprint 14 Retrospective
+2. Sprint 15 Planning
+3. Q4 Release Timeline
+
+Key Discussion Points:
+
+Sprint 14 Retro:
+- Completed 34 of 38 story points (89% completion rate)
+- Two critical bugs found in production - auth token refresh race condition
+- Mike's team successfully migrated 80% of users to new billing system
+- Action item: Priya to set up additional monitoring for auth service
+
+Sprint 15 Planning:
+- Priority 1: Fix remaining auth race condition (8 pts - James)
+- Priority 2: Complete billing migration for enterprise tier (13 pts - Mike)
+- Priority 3: Implement new dashboard analytics (8 pts - Lin)
+- Priority 4: API rate limiting improvements (5 pts - Sarah)
+- Total committed: 34 story points
+
+Q4 Release:
+- Target date: December 15, 2023
+- Feature freeze: December 1
+- All teams need to complete integration testing by Dec 8
+- Marketing materials due by Dec 10
+
+Action Items:
+- [ ] Sarah: Schedule load testing for rate limiter
+- [ ] Mike: Share billing migration runbook
+- [ ] Priya: Deploy auth monitoring dashboard
+- [ ] James: Write postmortem for auth incident
+- [ ] Lin: Create mockups for dashboard v2
+
+Next meeting: November 27, 2023

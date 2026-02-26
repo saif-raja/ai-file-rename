@@ -1,0 +1,12 @@
+This is the real file that symlinks point to.
+
+Symlinks (symbolic links) are special files that act as
+references to another file. The rename tool needs to handle
+symlinks carefully:
+
+1. Should it rename the symlink or the target?
+2. Should it follow symlinks or skip them?
+3. What happens if a symlink is broken (dangling)?
+4. Should the tool preserve symlink relationships?
+
+This file tests all of these scenarios.

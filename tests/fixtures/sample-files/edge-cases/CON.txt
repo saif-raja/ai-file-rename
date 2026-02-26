@@ -1,0 +1,11 @@
+This file is named CON.txt, which is a reserved device name on Windows.
+
+Windows reserved names include:
+CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9
+
+These names cannot be used as file names on Windows regardless
+of the file extension. A good rename tool should detect and
+handle these appropriately when targeting cross-platform compatibility.
+
+This file tests the tool's ability to identify potentially
+problematic filenames for Windows systems.

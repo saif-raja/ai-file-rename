@@ -1,0 +1,12 @@
+This is a hidden file (starts with a dot).
+It might contain sensitive configuration or notes that
+the user doesn't want visible in normal directory listings.
+
+Common examples of hidden files:
+- .env (environment variables)
+- .gitignore (git ignore rules)
+- .bashrc (shell configuration)
+- .ssh/config (SSH configuration)
+
+This file tests whether the rename tool properly handles
+files whose names begin with a period.

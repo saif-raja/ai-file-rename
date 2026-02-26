@@ -1,0 +1,28 @@
+Deepest Level Document - Storage Layer Configuration
+
+This is the deepest file in the nested directory structure,
+located at level 3 of nesting.
+
+Database Configuration:
+  Primary: PostgreSQL 15.4
+    - Host: db-primary-01.internal
+    - Port: 5432
+    - Max connections: 200
+    - Shared buffers: 8GB
+    - Effective cache size: 24GB
+
+  Replicas: 3 read replicas
+    - Async replication lag target: <100ms
+    - Auto-failover: enabled
+
+Object Storage:
+  Provider: MinIO (S3-compatible)
+  Buckets:
+    - raw-data: incoming unprocessed files
+    - processed: transformation outputs
+    - archives: long-term storage (lifecycle: 90 days -> Glacier)
+
+Cache:
+  Redis Cluster: 6 nodes (3 primary + 3 replica)
+  Memory per node: 16GB
+  Eviction policy: allkeys-lru

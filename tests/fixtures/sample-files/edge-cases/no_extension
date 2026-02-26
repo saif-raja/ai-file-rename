@@ -1,0 +1,12 @@
+This file has no file extension at all.
+The rename tool needs to handle files without extensions gracefully.
+
+Without an extension, the tool must:
+1. Detect the file type from content/magic bytes
+2. Decide whether to add an appropriate extension
+3. Generate a descriptive name without relying on extension hints
+
+This is a plain text file that could be identified by:
+- MIME type detection (text/plain)
+- Magic byte analysis
+- Content inspection

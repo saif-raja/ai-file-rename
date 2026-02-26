@@ -1,0 +1,8 @@
+This file has excessive whitespace in its name.
+Multiple consecutive spaces between words can cause issues with:
+- Command-line tools that split on whitespace
+- Scripts that don't properly quote file paths
+- URL encoding in web applications
+- Certain backup and sync tools
+
+A good rename tool should normalize the spacing in filenames.

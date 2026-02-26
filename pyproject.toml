@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-file-rename"
+version = "1.0.0"
+description = "AI-powered file renaming using Google Gemini"
+requires-python = ">=3.9"
+license = "MIT"
+
+dependencies = [
+    "google-genai>=1.0.0",
+    "click>=8.0",
+    "rich>=13.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+images = ["Pillow>=10.0"]
+pdf = ["PyPDF2>=3.0"]
+office = ["python-docx>=1.0", "python-pptx>=1.0", "openpyxl>=3.1"]
+legacy-office = ["olefile>=0.46"]
+audio = ["mutagen>=1.47"]
+geo = ["reverse_geocoder>=1.5"]
+svg = ["cairosvg>=2.7"]
+
+full = [
+    "ai-file-rename[images]",
+    "ai-file-rename[pdf]",
+    "ai-file-rename[office]",
+    "ai-file-rename[legacy-office]",
+    "ai-file-rename[audio]",
+    "ai-file-rename[geo]",
+    "ai-file-rename[svg]",
+]
+
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+ai-rename = "ai_file_rename.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_file_rename"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

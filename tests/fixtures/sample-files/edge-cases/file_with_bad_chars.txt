@@ -1,0 +1,13 @@
+This file tests handling of problematic characters in filenames.
+
+The original intended name was: file<with>bad:chars.txt
+Characters that are illegal in filenames on various OS:
+- Windows: \ / : * ? " < > |
+- macOS: / and : (: shows as / in Finder)
+- Linux: / and null byte
+
+The rename tool should sanitize filenames by:
+1. Removing or replacing illegal characters
+2. Maintaining readability
+3. Preserving the file extension
+4. Avoiding collisions with existing files

@@ -1,0 +1,10 @@
+This file has an extremely long name (168 characters including extension).
+
+Most file systems have limits:
+- ext4: 255 bytes
+- NTFS: 255 characters
+- HFS+: 255 characters
+- Full path limit on Windows: 260 characters (MAX_PATH)
+
+The rename tool should respect these limits and truncate
+intelligently rather than at arbitrary positions.

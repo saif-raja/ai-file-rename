@@ -1,0 +1,8 @@
+{
+  "content_type": "document",
+  "primary_subject": "A quarterly revenue report for Q3 2023. Contains financial statements, revenue breakdowns by department, and year-over-year comparison charts.",
+  "key_entities": ["quarterly report", "Q3 2023", "revenue", "financial statements"],
+  "date_references": ["2023-09-30", "2023-Q3"],
+  "language": "en",
+  "confidence": 0.92
+}

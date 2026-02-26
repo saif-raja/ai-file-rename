@@ -1,0 +1,30 @@
+{
+  "folder_context_summary": "A mixed media folder containing a photo, meeting notes, a budget spreadsheet, and a company logo",
+  "naming_strategy": "Content-descriptive naming based on each file's primary purpose",
+  "renames": [
+    {
+      "current_name": "IMG_001.jpg",
+      "proposed_name": "team-meeting-photo.jpg",
+      "reasoning": "Photo appears to show a team meeting or gathering",
+      "confidence": 0.85
+    },
+    {
+      "current_name": "meeting-notes.txt",
+      "proposed_name": "sprint-planning-notes.txt",
+      "reasoning": "Notes from a sprint planning session",
+      "confidence": 0.90
+    },
+    {
+      "current_name": "budget.csv",
+      "proposed_name": "department-budget-q4.csv",
+      "reasoning": "Budget data broken down by department for Q4",
+      "confidence": 0.88
+    },
+    {
+      "current_name": "logo.svg",
+      "proposed_name": "company-logo-meridian.svg",
+      "reasoning": "Company logo for Meridian Technologies",
+      "confidence": 0.95
+    }
+  ]
+}
