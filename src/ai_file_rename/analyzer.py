@@ -249,6 +249,7 @@ async def _analyze_single_file(
     folder_context: FolderContext,
     client,
     model: str,
+    logger=None,
 ) -> tuple[AnalyzedFile, dict]:
     """Analyze a single file using Gemini. Returns (AnalyzedFile, token_counts)."""
     file_path = enriched.entry.path
@@ -322,6 +323,14 @@ async def _analyze_single_file(
             response = retry_response
 
         summary = _parse_content_summary(response.text)
+
+        if logger:
+            logger.info(
+                f"  [analyzed] {enriched.entry.name} — "
+                f"type: {summary.content_type}, "
+                f"confidence: {summary.confidence:.2f}, "
+                f"subject: {summary.primary_subject[:60]}"
+            )
     except Exception as e:
         summary = ContentSummary(
             content_type="unknown",
@@ -331,6 +340,10 @@ async def _analyze_single_file(
             language="unknown",
             confidence=0.0,
         )
+        if logger:
+            logger.warning(
+                f"  [FAILED] {enriched.entry.name} — {str(e)[:100]}"
+            )
 
     return AnalyzedFile(enriched=enriched, summary=summary), token_counts
 
@@ -352,6 +365,7 @@ async def analyze_folder(
     client,
     model: str,
     config: Config,
+    logger=None,
 ) -> tuple[list[AnalyzedFile], dict]:
     """
     Analyze all files in a folder using Gemini.
@@ -391,7 +405,7 @@ async def analyze_folder(
 
         try:
             result = await _retry_with_backoff(
-                lambda e=enriched: _analyze_single_file(e, folder, client, model)
+                lambda e=enriched: _analyze_single_file(e, folder, client, model, logger=logger)
             )
             analyzed, file_tokens = result
             results.append(analyzed)
@@ -421,6 +435,7 @@ async def analyze_all(
     model: str,
     config: Config,
     concurrency: int = 3,
+    logger=None,
 ) -> tuple[dict[Path, list[AnalyzedFile]], dict]:
     """
     Analyze all folders concurrently (within concurrency limit).
@@ -443,7 +458,7 @@ async def analyze_all(
     async def process_folder(folder_path: Path, folder: FolderContext):
         nonlocal all_tokens
         async with semaphore:
-            analyzed, folder_tokens = await analyze_folder(folder, client, model, config)
+            analyzed, folder_tokens = await analyze_folder(folder, client, model, config, logger=logger)
             results[folder_path] = analyzed
             all_tokens = _add_token_counts(all_tokens, folder_tokens)
 

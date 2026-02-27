@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import sys
 import tempfile
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +65,119 @@ def _generate_run_id() -> str:
     date_part = datetime.now().strftime("%Y%m%d")
     uuid_part = uuid.uuid4().hex[:8]
     return f"{date_part}-{uuid_part}"
+
+
+def _write_run_report(
+    target: Path,
+    run_id: str,
+    config,
+    discovery,
+    validated: list,
+    total_tokens: dict,
+    skipped_well_named: list,
+    skipped_analysis_failed: list,
+    executed: bool,
+    result=None,
+) -> None:
+    """Write a markdown run report to the target directory.
+
+    Persists a human-readable summary of every run (dry-run or executed)
+    so users can review what happened without re-running the tool.
+    """
+    from ai_file_rename.constants import COST_PER_TOKEN
+
+    timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    mode = "executed" if executed else "dry-run"
+    model_costs = COST_PER_TOKEN.get(config.model, {})
+    est_cost = (
+        total_tokens.get("input_tokens", 0) * model_costs.get("input", 0)
+        + total_tokens.get("output_tokens", 0) * model_costs.get("output", 0)
+    )
+
+    rename_count = sum(1 for v in validated if not v.original.is_unchanged)
+    unchanged_count = sum(1 for v in validated if v.original.is_unchanged)
+
+    lines = [
+        "# ai-rename report",
+        "",
+        "| Field | Value |",
+        "|-------|-------|",
+        f"| Run ID | `{run_id}` |",
+        f"| Timestamp | {timestamp} |",
+        f"| Mode | **{mode}** |",
+        f"| Target | `{target}` |",
+        f"| Recursive | {'yes' if discovery.impact.recursive else 'no'} |",
+        f"| Model | {config.model} |",
+        "",
+        "## Impact",
+        "",
+        f"- Files discovered: {discovery.impact.total_files} "
+        f"({discovery.impact.supported_files} supported, "
+        f"{discovery.impact.unsupported_files} unsupported)",
+        f"- Files analyzed: {discovery.impact.supported_files - len(skipped_well_named)}",
+        f"- Skipped (well-named): {len(skipped_well_named)}",
+    ]
+
+    if skipped_analysis_failed:
+        lines.append(f"- Analysis failures: {len(skipped_analysis_failed)}")
+
+    lines.extend([
+        f"- Names proposed: {len(validated)} ({rename_count} renames, {unchanged_count} unchanged)",
+        f"- Tokens: {total_tokens.get('input_tokens', 0):,} input + "
+        f"{total_tokens.get('output_tokens', 0):,} output",
+        f"- Estimated cost: ${est_cost:.4f}",
+    ])
+
+    if result:
+        lines.extend([
+            "",
+            f"- Files renamed: {result.renamed}",
+            f"- Files skipped: {result.skipped}",
+            f"- Files failed: {result.failed}",
+            f"- Symlinks updated: {result.symlinks_updated}",
+        ])
+
+    # Rename table
+    lines.extend([
+        "",
+        "## Proposed Renames",
+        "",
+        "| # | Current Name | Proposed Name | Notes |",
+        "|---|-------------|---------------|-------|",
+    ])
+
+    for i, v in enumerate(validated, 1):
+        notes = ""
+        if v.original.is_unchanged:
+            notes = "unchanged"
+        elif v.validation_notes:
+            notes = "; ".join(v.validation_notes)
+        lines.append(f"| {i} | {v.original.current_name} | {v.final_name} | {notes} |")
+
+    # Well-named files
+    if skipped_well_named:
+        lines.extend([
+            "",
+            f"## Skipped (well-named): {len(skipped_well_named)} files",
+            "",
+        ])
+        for name in skipped_well_named:
+            lines.append(f"- {name}")
+
+    # Analysis failures
+    if skipped_analysis_failed:
+        lines.extend([
+            "",
+            f"## Analysis Failures: {len(skipped_analysis_failed)} files",
+            "",
+        ])
+        for name, reason in skipped_analysis_failed:
+            lines.append(f"- **{name}**: {reason}")
+
+    lines.append("")  # trailing newline
+
+    report_path = target / f".ai-rename-report-{run_id}.md"
+    report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _display_impact_summary(impact, use_rich: bool = True) -> None:
@@ -418,9 +532,12 @@ def main():
 )
 @click.option("--plain", "-P", is_flag=True, default=False,
               help="Plain text output (no Rich formatting). Best for agent/script consumption.")
+@click.option("--no-skip-well-named", is_flag=True, default=False,
+              help="Disable the well-named heuristic — analyze ALL files regardless of current name.")
 def rename(target_directory, recursive, execute, headless, config_path, model,
            max_files, custom_instructions, verbose, cost_limit,
-           dry_run, include, exclude, skip_converted, log_level, plain):
+           dry_run, include, exclude, skip_converted, log_level, plain,
+           no_skip_well_named):
     """Rename files using AI-powered content analysis."""
     # Build CLI overrides
     overrides = {}
@@ -442,6 +559,8 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         overrides["convert_office_docs"] = False
     if log_level is not None:
         overrides["log_level"] = log_level.upper()
+    if no_skip_well_named:
+        overrides["skip_well_named"] = False
 
     # --dry-run explicitly disables execute mode
     if dry_run:
@@ -638,6 +757,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             )
             sys.exit(1)
 
+        t_analysis_start = time.monotonic()
         with _phase_status(console, "Analyzing file contents with Gemini"):
             analyzed, analyze_tokens = asyncio.run(
                 analyze_all(
@@ -646,13 +766,21 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                     config.model,
                     config,
                     concurrency=config.concurrency,
+                    logger=logger,
                 )
             )
+        t_analysis_elapsed = time.monotonic() - t_analysis_start
+        analyzed_count = sum(len(v) for v in analyzed.values())
+        logger.info(
+            f"Phase: Content Analysis — {analyzed_count} files "
+            f"in {t_analysis_elapsed:.1f}s"
+        )
 
         # Phase 5: Holistic naming
         from ai_file_rename.namer import name_all
 
         logger.info("Generating holistic names...")
+        t_naming_start = time.monotonic()
         with _phase_status(console, "Generating holistic names"):
             proposed, naming_tokens = asyncio.run(
                 name_all(
@@ -662,8 +790,15 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                     config.model,
                     config,
                     concurrency=config.concurrency,
+                    logger=logger,
                 )
             )
+        t_naming_elapsed = time.monotonic() - t_naming_start
+        naming_count = sum(len(v) for v in proposed.values())
+        logger.info(
+            f"Phase: Holistic Naming — {naming_count} names "
+            f"across {len(proposed)} folders in {t_naming_elapsed:.1f}s"
+        )
 
         total_tokens = {
             "input_tokens": analyze_tokens["input_tokens"] + naming_tokens["input_tokens"],
@@ -673,6 +808,40 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             f"Token usage — input: {total_tokens['input_tokens']:,}, "
             f"output: {total_tokens['output_tokens']:,}"
         )
+
+    # Report files that failed analysis (ISSUE-01: these are excluded from
+    # naming to prevent error messages from leaking into filenames)
+    skipped_analysis_failed = []
+    for folder_path, analyzed_files in analyzed.items():
+        for af in analyzed_files:
+            ct = af.summary.content_type
+            if ct in ("error", "unknown", "skipped") or af.summary.confidence < 0.1:
+                reason = af.summary.primary_subject[:80]
+                skipped_analysis_failed.append((af.enriched.entry.name, reason))
+                logger.warning(
+                    f"Analysis failed for {af.enriched.entry.name}: {reason}"
+                )
+
+    if skipped_analysis_failed:
+        if use_rich:
+            try:
+                from rich.console import Console as _C
+                _c = _C()
+                _c.print(
+                    f"\n[yellow]Analysis failed for "
+                    f"{len(skipped_analysis_failed)} file(s) "
+                    f"(excluded from renaming):[/yellow]"
+                )
+                for name, reason in skipped_analysis_failed:
+                    _c.print(f"[yellow]  - {name}: {reason}[/yellow]")
+            except ImportError:
+                pass
+        else:
+            print(
+                f"\n[ANALYSIS FAILURES] count={len(skipped_analysis_failed)}"
+            )
+            for name, reason in skipped_analysis_failed:
+                print(f"  [skipped] {name}: {reason}")
 
     # Flatten all proposed renames
     all_renames = []
@@ -707,7 +876,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             click.echo("No changes made.")
             return
 
-    if execute or headless:
+    if execute or (headless and not dry_run):
         # Phase 8: Execution
         from ai_file_rename.executor import execute_renames
 
@@ -720,6 +889,20 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                 config=config,
                 symlink_map=discovery.symlink_map,
             )
+
+        # Attach token usage and cost estimate to result (ISSUE-07: these
+        # were previously 0 in the CSV ledger because they weren't set)
+        from ai_file_rename.constants import COST_PER_TOKEN
+
+        result.total_tokens_used = (
+            total_tokens["input_tokens"] + total_tokens["output_tokens"]
+        )
+        model_costs = COST_PER_TOKEN.get(config.model, {})
+        result.estimated_cost_usd = round(
+            total_tokens["input_tokens"] * model_costs.get("input", 0.0)
+            + total_tokens["output_tokens"] * model_costs.get("output", 0.0),
+            4,
+        )
 
         _display_execution_result(result, use_rich=use_rich)
 
@@ -772,6 +955,58 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         })
 
         logger.info(f"Session {run_id} complete.")
+
+    # --- Write run report to target directory ---
+    _did_execute = 'result' in dir() and result is not None
+    _analysis_failed = skipped_analysis_failed if 'skipped_analysis_failed' in dir() else []
+    _write_run_report(
+        target=target,
+        run_id=run_id,
+        config=config,
+        discovery=discovery,
+        validated=validated,
+        total_tokens=total_tokens,
+        skipped_well_named=skipped_well_named,
+        skipped_analysis_failed=_analysis_failed,
+        executed=_did_execute,
+        result=result if _did_execute else None,
+    )
+    logger.info(f"Report written to {target / f'.ai-rename-report-{run_id}.md'}")
+
+    # --- Run Summary (logged for ALL runs including dry-run) ---
+    analysis_failed_count = len(_analysis_failed)
+    well_named_count = len(skipped_well_named)
+    total_token_count = total_tokens["input_tokens"] + total_tokens["output_tokens"]
+
+    logger.info("=== RUN SUMMARY ===")
+    logger.info(
+        f"Files discovered: {discovery.impact.total_files} "
+        f"({discovery.impact.supported_files} supported, "
+        f"{discovery.impact.unsupported_files} unsupported)"
+    )
+    logger.info(
+        f"Files analyzed: {len(processable_files)} "
+        f"({well_named_count} skipped well-named)"
+    )
+    if analysis_failed_count:
+        logger.info(f"Analysis failures: {analysis_failed_count}")
+    logger.info(
+        f"Names proposed: {len(all_renames)} "
+        f"({sum(1 for v in validated if not v.original.is_unchanged)} renames, "
+        f"{sum(1 for v in validated if v.original.is_unchanged)} unchanged)"
+    )
+    logger.info(
+        f"Tokens: {total_tokens['input_tokens']:,} input + "
+        f"{total_tokens['output_tokens']:,} output = "
+        f"{total_token_count:,} total"
+    )
+    from ai_file_rename.constants import COST_PER_TOKEN as _CPT
+    _mc = _CPT.get(config.model, {})
+    _est_cost = (
+        total_tokens["input_tokens"] * _mc.get("input", 0)
+        + total_tokens["output_tokens"] * _mc.get("output", 0)
+    )
+    logger.info(f"Estimated cost: ${_est_cost:.4f}")
 
 
 @main.command()

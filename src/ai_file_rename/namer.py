@@ -141,6 +141,7 @@ def _parse_naming_response(
     response_text: str,
     files: list[AnalyzedFile],
     folder_path: Path,
+    logger=None,
 ) -> list[ProposedRename]:
     """Parse the naming response from Gemini into ProposedRename objects."""
     try:
@@ -157,6 +158,8 @@ def _parse_naming_response(
 
     # Build a lookup from current name to AnalyzedFile
     file_lookup = {f.enriched.entry.name: f for f in files}
+    input_names = set(file_lookup.keys())
+    matched_names = set()
 
     results = []
     for rename_data in renames_data:
@@ -165,6 +168,12 @@ def _parse_naming_response(
         reasoning = rename_data.get("reasoning", "")
         confidence = float(rename_data.get("confidence", 0.5))
 
+        if logger:
+            logger.debug(
+                f"  [parse] {current_name} -> {proposed_name} "
+                f"(confidence: {confidence:.2f}, reasoning: {reasoning[:80]})"
+            )
+
         # Find the matching file
         file_entry = file_lookup.get(current_name)
         if file_entry is None:
@@ -172,10 +181,18 @@ def _parse_naming_response(
             for name, entry in file_lookup.items():
                 if name.lower() == current_name.lower():
                     file_entry = entry
+                    current_name = name  # use the actual name for tracking
                     break
 
         if file_entry is None:
+            if logger:
+                logger.warning(
+                    f"  [naming-miss] {current_name} — "
+                    f"present in Gemini response but not in input set"
+                )
             continue
+
+        matched_names.add(current_name)
 
         current_path = file_entry.enriched.entry.path
         proposed_path = current_path.parent / proposed_name
@@ -191,6 +208,15 @@ def _parse_naming_response(
                 is_unchanged=(current_name == proposed_name),
             )
         )
+
+    # Warn about files in the input set that were not in the response
+    if logger:
+        missing = input_names - matched_names
+        for name in missing:
+            logger.warning(
+                f"  [naming-miss] {name} — "
+                f"not found in Gemini response, will not be renamed"
+            )
 
     return results
 
@@ -222,6 +248,7 @@ class FullHolisticStrategy:
         client,
         model: str,
         config: Config,
+        logger=None,
     ) -> tuple[list[ProposedRename], dict]:
         # Build file summaries
         summaries = "\n\n".join(
@@ -242,6 +269,12 @@ class FullHolisticStrategy:
             custom_instructions=custom,
         )
 
+        if logger:
+            logger.debug(
+                f"  [naming-prompt] FullHolistic: {len(files)} files, "
+                f"prompt length: {len(prompt)} chars, folder: {context.folder_name}"
+            )
+
         response = client.models.generate_content(
             model=model,
             contents=[prompt],
@@ -254,8 +287,17 @@ class FullHolisticStrategy:
         token_counts = _extract_token_counts(response)
 
         renames = _parse_naming_response(
-            response.text, files, context.folder_path
+            response.text, files, context.folder_path, logger=logger
         )
+
+        if logger:
+            for r in renames:
+                tag = "unchanged" if r.is_unchanged else "named"
+                logger.info(
+                    f"  [{tag}] {r.current_name} -> {r.proposed_name} "
+                    f"(confidence: {r.confidence:.2f})"
+                )
+
         return renames, token_counts
 
 
@@ -269,6 +311,7 @@ class ClusteredHolisticStrategy:
         client,
         model: str,
         config: Config,
+        logger=None,
     ) -> tuple[list[ProposedRename], dict]:
         # Cluster by content type
         clusters: dict[str, list[AnalyzedFile]] = {}
@@ -283,6 +326,12 @@ class ClusteredHolisticStrategy:
         for ct, cluster_files in clusters.items():
             overview_parts.append(f"- {ct}: {len(cluster_files)} files")
         overview = "\n".join(overview_parts)
+
+        if logger:
+            logger.debug(
+                f"  [naming-prompt] Clustered: {len(files)} files in "
+                f"{len(clusters)} clusters, folder: {context.folder_name}"
+            )
 
         all_renames = []
         prior_names = []
@@ -322,6 +371,12 @@ class ClusteredHolisticStrategy:
                     custom_instructions=custom,
                 )
 
+                if logger:
+                    logger.debug(
+                        f"  [naming-batch] cluster '{ct}' batch {i // 50 + 1}: "
+                        f"{len(batch)} files, prompt: {len(prompt)} chars"
+                    )
+
                 response = client.models.generate_content(
                     model=model,
                     contents=[prompt],
@@ -331,10 +386,18 @@ class ClusteredHolisticStrategy:
                 total_tokens = _add_token_counts(total_tokens, _extract_token_counts(response))
 
                 batch_renames = _parse_naming_response(
-                    response.text, batch, context.folder_path
+                    response.text, batch, context.folder_path, logger=logger
                 )
                 all_renames.extend(batch_renames)
                 prior_names.extend(r.proposed_name for r in batch_renames)
+
+                if logger:
+                    for r in batch_renames:
+                        tag = "unchanged" if r.is_unchanged else "named"
+                        logger.info(
+                            f"  [{tag}] {r.current_name} -> {r.proposed_name} "
+                            f"(confidence: {r.confidence:.2f})"
+                        )
 
         return all_renames, total_tokens
 
@@ -349,6 +412,7 @@ class SampledHolisticStrategy:
         client,
         model: str,
         config: Config,
+        logger=None,
     ) -> tuple[list[ProposedRename], dict]:
         # Stratified sample of ~50 files
         sample_size = min(50, len(files))
@@ -365,10 +429,16 @@ class SampledHolisticStrategy:
             sample.extend(ct_files[:per_cluster])
         sample = sample[:sample_size]
 
+        if logger:
+            logger.debug(
+                f"  [naming-prompt] Sampled: {len(files)} files, "
+                f"sample size: {len(sample)}, folder: {context.folder_name}"
+            )
+
         # Name the sample holistically
         full_strategy = FullHolisticStrategy()
         sample_renames, total_tokens = await full_strategy.generate_names(
-            sample, context, client, model, config
+            sample, context, client, model, config, logger=logger
         )
 
         # Apply patterns to remaining files
@@ -415,10 +485,18 @@ class SampledHolisticStrategy:
             total_tokens = _add_token_counts(total_tokens, _extract_token_counts(response))
 
             batch_renames = _parse_naming_response(
-                response.text, batch, context.folder_path
+                response.text, batch, context.folder_path, logger=logger
             )
             all_renames.extend(batch_renames)
             prior_names.extend(r.proposed_name for r in batch_renames)
+
+            if logger:
+                for r in batch_renames:
+                    tag = "unchanged" if r.is_unchanged else "named"
+                    logger.info(
+                        f"  [{tag}] {r.current_name} -> {r.proposed_name} "
+                        f"(confidence: {r.confidence:.2f})"
+                    )
 
         return all_renames, total_tokens
 
@@ -433,11 +511,18 @@ class ProgressiveHolisticStrategy:
         client,
         model: str,
         config: Config,
+        logger=None,
     ) -> tuple[list[ProposedRename], dict]:
         all_renames = []
         prior_names = []
         total_tokens = {"input_tokens": 0, "output_tokens": 0}
         batch_size = 50
+
+        if logger:
+            logger.debug(
+                f"  [naming-prompt] Progressive: {len(files)} files, "
+                f"batch size: {batch_size}, folder: {context.folder_name}"
+            )
 
         for i in range(0, len(files), batch_size):
             batch = files[i : i + batch_size]
@@ -466,6 +551,12 @@ class ProgressiveHolisticStrategy:
                 custom_instructions=custom,
             )
 
+            if logger:
+                logger.debug(
+                    f"  [naming-batch] batch {i // batch_size + 1}: "
+                    f"{len(batch)} files, prompt: {len(prompt)} chars"
+                )
+
             response = client.models.generate_content(
                 model=model,
                 contents=[prompt],
@@ -475,15 +566,23 @@ class ProgressiveHolisticStrategy:
             total_tokens = _add_token_counts(total_tokens, _extract_token_counts(response))
 
             batch_renames = _parse_naming_response(
-                response.text, batch, context.folder_path
+                response.text, batch, context.folder_path, logger=logger
             )
             all_renames.extend(batch_renames)
             prior_names.extend(r.proposed_name for r in batch_renames)
 
+            if logger:
+                for r in batch_renames:
+                    tag = "unchanged" if r.is_unchanged else "named"
+                    logger.info(
+                        f"  [{tag}] {r.current_name} -> {r.proposed_name} "
+                        f"(confidence: {r.confidence:.2f})"
+                    )
+
         return all_renames, total_tokens
 
 
-def _name_single_file(analyzed: AnalyzedFile, config: Config) -> list[ProposedRename]:
+def _name_single_file(analyzed: AnalyzedFile, config: Config, logger=None) -> list[ProposedRename]:
     """Generate a name for a single file from its content analysis alone.
 
     When a folder has exactly one file, we skip the holistic naming LLM
@@ -517,6 +616,12 @@ def _name_single_file(analyzed: AnalyzedFile, config: Config) -> list[ProposedRe
                 break
     candidate = sep.join(words)
 
+    if logger:
+        logger.debug(
+            f"  [single-file] subject: {subject[:60]}, "
+            f"words: {words}, candidate: {candidate}"
+        )
+
     # Ensure the name isn't empty
     if not candidate:
         candidate = f"file{sep}{summary.content_type}"
@@ -525,6 +630,13 @@ def _name_single_file(analyzed: AnalyzedFile, config: Config) -> list[ProposedRe
 
     # If the proposed name matches the current name, it's unchanged
     is_unchanged = proposed_name == entry.name
+
+    if logger:
+        tag = "unchanged" if is_unchanged else "named:single"
+        logger.info(
+            f"  [{tag}] {entry.name} -> {proposed_name} "
+            f"(deterministic, no LLM call)"
+        )
 
     return [
         ProposedRename(
@@ -558,6 +670,7 @@ async def name_folder(
     client,
     model: str,
     config: Config,
+    logger=None,
 ) -> tuple[list[ProposedRename], dict]:
     """
     Generate holistic names for all files in a single folder.
@@ -576,11 +689,30 @@ async def name_folder(
     Returns:
         Tuple of (list of proposed renames, token_counts dict).
     """
-    # Filter out files that had analysis errors
-    processable = [
-        f for f in analyzed_files
-        if f.summary.content_type not in ("skipped", "error")
-    ]
+    # Filter out files that had analysis errors or are unnameable.
+    # Files with error/unknown/skipped content_type, or confidence below
+    # threshold, should NOT be renamed — they would produce garbage names
+    # derived from error messages (see ISSUE-01).
+    _SKIP_CONTENT_TYPES = frozenset({"skipped", "error", "unknown"})
+    _MIN_CONFIDENCE = 0.1
+
+    processable = []
+    for f in analyzed_files:
+        if f.summary.content_type in _SKIP_CONTENT_TYPES:
+            if logger:
+                logger.info(
+                    f"  [skipped] {f.enriched.entry.name} — "
+                    f"analysis {f.summary.content_type}, excluded from naming"
+                )
+            continue
+        if f.summary.confidence < _MIN_CONFIDENCE:
+            if logger:
+                logger.info(
+                    f"  [skipped] {f.enriched.entry.name} — "
+                    f"low confidence ({f.summary.confidence:.2f}), excluded"
+                )
+            continue
+        processable.append(f)
 
     if not processable:
         return [], {"input_tokens": 0, "output_tokens": 0}
@@ -588,11 +720,11 @@ async def name_folder(
     # Single-file optimization: skip holistic naming, generate name from
     # the content analysis alone (no extra LLM call needed)
     if len(processable) == 1:
-        return _name_single_file(processable[0], config), {"input_tokens": 0, "output_tokens": 0}
+        return _name_single_file(processable[0], config, logger=logger), {"input_tokens": 0, "output_tokens": 0}
 
     strategy = select_strategy(len(processable))
     return await strategy.generate_names(
-        processable, folder_context, client, model, config
+        processable, folder_context, client, model, config, logger=logger
     )
 
 
@@ -603,6 +735,7 @@ async def name_all(
     model: str,
     config: Config,
     concurrency: int = 3,
+    logger=None,
 ) -> tuple[dict[Path, list[ProposedRename]], dict]:
     """
     Generate names for all folders concurrently.
@@ -635,7 +768,7 @@ async def name_all(
 
             try:
                 renames, folder_tokens = await name_folder(
-                    folder_path, files, context, client, model, config
+                    folder_path, files, context, client, model, config, logger=logger
                 )
                 results[folder_path] = renames
                 all_tokens = _add_token_counts(all_tokens, folder_tokens)

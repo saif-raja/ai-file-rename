@@ -386,8 +386,12 @@ def is_well_named(filename: str) -> bool:
 
     Checks:
     1. Name length > 15 characters
-    2. Contains multiple real words (3+ word-like tokens)
+    2. Contains multiple real words (3+ meaningful word-like tokens)
     3. Does not match common default patterns
+    4. No repeated words (case-insensitive)
+    5. No version/draft indicators (v1, _FINAL, _draft, _copy)
+    6. No ALL_CAPS tokens (suggests sloppy or automated naming)
+    7. Tokens must be semantically meaningful (not generic filler)
 
     Args:
         filename: The file name to check (with extension).
@@ -429,9 +433,39 @@ def is_well_named(filename: str) -> bool:
         if _re.search(pattern, stem, _re.IGNORECASE):
             return False
 
+    # Check for version/draft indicators — these suggest naming noise
+    version_patterns = [
+        r"[-_\s]v\d+",               # v1, v2, etc.
+        r"[-_\s](?:FINAL|final)",     # _FINAL, -final
+        r"[-_\s](?:DRAFT|draft)",     # _DRAFT, -draft
+        r"[-_\s](?:COPY|copy)",       # _COPY, -copy
+        r"[-_\s](?:NEW|new|OLD|old)", # _NEW, _OLD
+        r"[-_\s](?:TEMP|temp)",       # _TEMP, -temp
+    ]
+    for pattern in version_patterns:
+        if _re.search(pattern, stem):
+            return False
+
     # Tokenize by separators and check for real word-like tokens
     tokens = _re.split(r"[-_\s]+", stem)
     word_tokens = [t for t in tokens if len(t) >= 2 and t.isalpha()]
 
-    # Needs at least 3 real word-like tokens
-    return len(word_tokens) >= 3
+    # Check for repeated words (case-insensitive) — e.g. "final_v2_FINAL"
+    lowered = [t.lower() for t in word_tokens]
+    if len(lowered) != len(set(lowered)):
+        return False
+
+    # Check for ALL_CAPS tokens (more than 1 suggests sloppy naming)
+    all_caps_count = sum(1 for t in word_tokens if t.isupper() and len(t) > 1)
+    if all_caps_count > 1:
+        return False
+
+    # Filter out generic filler words that don't carry semantic meaning
+    _FILLER_WORDS = frozenset({
+        "file", "document", "copy", "new", "old", "temp", "test",
+        "the", "and", "for", "with", "from", "this", "that",
+    })
+    meaningful_tokens = [t for t in word_tokens if t.lower() not in _FILLER_WORDS]
+
+    # Needs at least 3 semantically meaningful tokens
+    return len(meaningful_tokens) >= 3
