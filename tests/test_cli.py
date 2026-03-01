@@ -105,8 +105,17 @@ class TestHistoryCommand:
 
 
 class TestUndoCommand:
-    def test_undo_no_manifest(self, temp_dir):
-        """Test undo when no manifest exists."""
+    def test_undo_no_manifest_with_force(self, temp_dir):
+        """Test undo with --force when no manifest exists raises error."""
         runner = CliRunner()
-        result = runner.invoke(main, ["undo", str(temp_dir)])
+        result = runner.invoke(main, ["undo", str(temp_dir), "--force"])
+        # Should fail because no manifest exists
         assert result.exit_code != 0
+        assert "No manifest" in result.output or "Error" in result.output
+
+    def test_undo_no_input_aborts(self, temp_dir):
+        """Test undo without --force aborts when user declines prompt."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["undo", str(temp_dir)], input="n\n")
+        assert result.exit_code == 0
+        assert "Aborted" in result.output

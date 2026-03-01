@@ -717,11 +717,10 @@ async def name_folder(
     if not processable:
         return [], {"input_tokens": 0, "output_tokens": 0}
 
-    # Single-file optimization: skip holistic naming, generate name from
-    # the content analysis alone (no extra LLM call needed)
-    if len(processable) == 1:
-        return _name_single_file(processable[0], config, logger=logger), {"input_tokens": 0, "output_tokens": 0}
-
+    # All files — including single-file folders — go through the LLM.
+    # The deterministic _name_single_file() path produced sentence-fragment
+    # names (see ISSUE-10). The marginal cost of one extra API call (~$0.001)
+    # is not worth the quality degradation.
     strategy = select_strategy(len(processable))
     return await strategy.generate_names(
         processable, folder_context, client, model, config, logger=logger

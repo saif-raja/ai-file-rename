@@ -432,12 +432,28 @@ you may keep it (return it unchanged).
 6. Generated names must be:
    - Lowercase only.
    - 2-8 hyphen-separated words describing the content.
-   - Noun-phrase oriented (not sentences).
+   - Noun-phrase oriented (not sentences or sentence fragments).
    - Ordered by specificity: most unique descriptor first, most general last.
    - ASCII only (transliterate non-ASCII characters).
    - The original file extension must be preserved exactly.
+   - NEVER start with articles like "a", "the", "this", or verbs \
+like "describes", "outlines", "contains". Lead with the most \
+distinctive noun or proper noun.
 7. Do NOT include the folder name or path components in the file name \
 unless absolutely necessary for disambiguation.
+
+EXAMPLES of good naming:
+- IMG_001.jpg (photo of sunset at Golden Gate Bridge) -> sunset-golden-gate-bridge.jpg
+- document.pdf (Acme Corp Q3 2023 revenue report) -> acme-corp-q3-revenue-report.pdf
+- notes.txt (ML research on transformer attention) -> transformer-attention-research-notes.txt
+- recording.mp3 (interview with Dr. Sarah Chen) -> sarah-chen-interview-recording.mp3
+- Screenshot 2023-11-15.png (error dialog in settings page) -> settings-page-error-dialog.png
+
+BAD naming patterns to avoid:
+- "a-photo-of-the-sunset.jpg" (starts with article, too verbose)
+- "this-document-outlines-the-architecture.pdf" (sentence fragment)
+- "file-containing-budget-data.csv" (starts with "file")
+- "notes-about-machine-learning.txt" ("about" is filler)
 {custom_instructions}
 
 Respond in this exact JSON format:

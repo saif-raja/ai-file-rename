@@ -342,16 +342,24 @@ class TestErrorFiltering:
 
         context = _make_folder_context(folder, [good_file, error_file])
 
-        # With 1 good file, single-file optimization kicks in (no LLM call)
+        # Mock client for the 1 remaining good file
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "renames": [
+                {"current_name": "photo.jpg", "proposed_name": "sunset-photo.jpg",
+                 "reasoning": "test", "confidence": 0.9},
+            ]
+        })
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
         config = Config(gemini_api_key="test")
         renames, tokens = await name_folder(
-            folder, [good_file, error_file], context, None, "gemini-2.5-flash", config
+            folder, [good_file, error_file], context, mock_client, "gemini-2.5-flash", config
         )
 
         assert len(renames) == 1
         assert renames[0].current_name == "photo.jpg"
-        # No LLM call needed (single-file optimization)
-        assert tokens["input_tokens"] == 0
 
     @pytest.mark.asyncio
     async def test_name_folder_excludes_unknown_content_type(self):
