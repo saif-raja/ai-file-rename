@@ -67,117 +67,160 @@ def _generate_run_id() -> str:
     return f"{date_part}-{uuid_part}"
 
 
-def _write_run_report(
-    target: Path,
-    run_id: str,
-    config,
-    discovery,
-    validated: list,
-    total_tokens: dict,
-    skipped_well_named: list,
-    skipped_analysis_failed: list,
-    executed: bool,
-    result=None,
-) -> None:
-    """Write a markdown run report to the target directory.
+class RunReport:
+    """Stateful run report that is rewritten at each pipeline phase.
 
-    Persists a human-readable summary of every run (dry-run or executed)
-    so users can review what happened without re-running the tool.
+    The same timestamped file is updated progressively as phases complete,
+    so anyone watching the target directory can see current pipeline status.
+    The final state of this file IS the complete run report.
     """
-    from ai_file_rename.constants import COST_PER_TOKEN
 
-    timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    mode = "executed" if executed else "dry-run"
-    model_costs = COST_PER_TOKEN.get(config.model, {})
-    est_cost = (
-        total_tokens.get("input_tokens", 0) * model_costs.get("input", 0)
-        + total_tokens.get("output_tokens", 0) * model_costs.get("output", 0)
-    )
+    def __init__(self, target: Path, run_id: str, config):
+        self.target = target
+        self.run_id = run_id
+        self.config = config
+        self.timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        self.report_path = target / f".ai-rename-report-{run_id}.md"
 
-    rename_count = sum(1 for v in validated if not v.original.is_unchanged)
-    unchanged_count = sum(1 for v in validated if v.original.is_unchanged)
+        # Accumulated data (set progressively)
+        self.status = "initializing"
+        self.recursive = False
+        self.discovery = None
+        self.skipped_well_named: list = []
+        self.analyzed_count = 0
+        self.analysis_failures: list = []   # list of (name, reason)
+        self.validated: list = []
+        self.total_tokens: dict = {}
+        self.executed = False
+        self.result = None
 
-    lines = [
-        "# ai-rename report",
-        "",
-        "| Field | Value |",
-        "|-------|-------|",
-        f"| Run ID | `{run_id}` |",
-        f"| Timestamp | {timestamp} |",
-        f"| Mode | **{mode}** |",
-        f"| Target | `{target}` |",
-        f"| Recursive | {'yes' if discovery.impact.recursive else 'no'} |",
-        f"| Model | {config.model} |",
-        "",
-        "## Impact",
-        "",
-        f"- Files discovered: {discovery.impact.total_files} "
-        f"({discovery.impact.supported_files} supported, "
-        f"{discovery.impact.unsupported_files} unsupported)",
-        f"- Files analyzed: {discovery.impact.supported_files - len(skipped_well_named)}",
-        f"- Skipped (well-named): {len(skipped_well_named)}",
-    ]
+    def update(self, status: str, **kwargs) -> None:
+        """Update the report status and any new data, then rewrite the file."""
+        self.status = status
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        try:
+            self._write()
+        except OSError:
+            pass  # Non-fatal — don't crash the pipeline for a report write
 
-    if skipped_analysis_failed:
-        lines.append(f"- Analysis failures: {len(skipped_analysis_failed)}")
+    def _write(self) -> None:
+        from ai_file_rename.constants import COST_PER_TOKEN
 
-    lines.extend([
-        f"- Names proposed: {len(validated)} ({rename_count} renames, {unchanged_count} unchanged)",
-        f"- Tokens: {total_tokens.get('input_tokens', 0):,} input + "
-        f"{total_tokens.get('output_tokens', 0):,} output",
-        f"- Estimated cost: ${est_cost:.4f}",
-    ])
+        model_costs = COST_PER_TOKEN.get(self.config.model, {})
+        est_cost = (
+            self.total_tokens.get("input_tokens", 0) * model_costs.get("input", 0)
+            + self.total_tokens.get("output_tokens", 0) * model_costs.get("output", 0)
+        )
 
-    if result:
-        lines.extend([
+        mode = "executed" if self.executed else "dry-run"
+
+        lines = [
+            "# ai-rename report",
             "",
-            f"- Files renamed: {result.renamed}",
-            f"- Files skipped: {result.skipped}",
-            f"- Files failed: {result.failed}",
-            f"- Symlinks updated: {result.symlinks_updated}",
-        ])
+            "| Field | Value |",
+            "|-------|-------|",
+            f"| Run ID | `{self.run_id}` |",
+            f"| Started | {self.timestamp} |",
+            f"| Status | **{self.status}** |",
+            f"| Mode | **{mode}** |",
+            f"| Target | `{self.target}` |",
+            f"| Recursive | {'yes' if self.recursive else 'no'} |",
+            f"| Model | {self.config.model} |",
+        ]
 
-    # Rename table
-    lines.extend([
-        "",
-        "## Proposed Renames",
-        "",
-        "| # | Current Name | Proposed Name | Notes |",
-        "|---|-------------|---------------|-------|",
-    ])
+        # Impact section (available after discovery)
+        if self.discovery:
+            imp = self.discovery.impact
+            lines.extend([
+                "",
+                "## Impact",
+                "",
+                f"- Files discovered: {imp.total_files} "
+                f"({imp.supported_files} supported, "
+                f"{imp.unsupported_files} unsupported)",
+            ])
+            if self.analyzed_count or self.skipped_well_named:
+                lines.append(
+                    f"- Files analyzed: {self.analyzed_count}"
+                )
+                lines.append(
+                    f"- Skipped (well-named): {len(self.skipped_well_named)}"
+                )
+            if self.analysis_failures:
+                lines.append(
+                    f"- Analysis failures: {len(self.analysis_failures)}"
+                )
+            if self.validated:
+                rename_count = sum(
+                    1 for v in self.validated if not v.original.is_unchanged
+                )
+                unchanged_count = sum(
+                    1 for v in self.validated if v.original.is_unchanged
+                )
+                lines.append(
+                    f"- Names proposed: {len(self.validated)} "
+                    f"({rename_count} renames, {unchanged_count} unchanged)"
+                )
+            if self.total_tokens:
+                lines.append(
+                    f"- Tokens: "
+                    f"{self.total_tokens.get('input_tokens', 0):,} input + "
+                    f"{self.total_tokens.get('output_tokens', 0):,} output"
+                )
+                lines.append(f"- Estimated cost: ${est_cost:.4f}")
 
-    for i, v in enumerate(validated, 1):
-        notes = ""
-        if v.original.is_unchanged:
-            notes = "unchanged"
-        elif v.validation_notes:
-            notes = "; ".join(v.validation_notes)
-        lines.append(f"| {i} | {v.original.current_name} | {v.final_name} | {notes} |")
+            if self.result:
+                lines.extend([
+                    "",
+                    f"- Files renamed: {self.result.renamed}",
+                    f"- Files skipped: {self.result.skipped}",
+                    f"- Files failed: {self.result.failed}",
+                    f"- Symlinks updated: {self.result.symlinks_updated}",
+                ])
 
-    # Well-named files
-    if skipped_well_named:
-        lines.extend([
-            "",
-            f"## Skipped (well-named): {len(skipped_well_named)} files",
-            "",
-        ])
-        for name in skipped_well_named:
-            lines.append(f"- {name}")
+        # Rename table (available after validation)
+        if self.validated:
+            lines.extend([
+                "",
+                "## Proposed Renames",
+                "",
+                "| # | Current Name | Proposed Name | Notes |",
+                "|---|-------------|---------------|-------|",
+            ])
+            for i, v in enumerate(self.validated, 1):
+                notes = ""
+                if v.original.is_unchanged:
+                    notes = "unchanged"
+                elif v.validation_notes:
+                    notes = "; ".join(v.validation_notes)
+                lines.append(
+                    f"| {i} | {v.original.current_name} "
+                    f"| {v.final_name} | {notes} |"
+                )
 
-    # Analysis failures
-    if skipped_analysis_failed:
-        lines.extend([
-            "",
-            f"## Analysis Failures: {len(skipped_analysis_failed)} files",
-            "",
-        ])
-        for name, reason in skipped_analysis_failed:
-            lines.append(f"- **{name}**: {reason}")
+        # Well-named files
+        if self.skipped_well_named:
+            lines.extend([
+                "",
+                f"## Skipped (well-named): {len(self.skipped_well_named)} files",
+                "",
+            ])
+            for name in self.skipped_well_named:
+                lines.append(f"- {name}")
 
-    lines.append("")  # trailing newline
+        # Analysis failures
+        if self.analysis_failures:
+            lines.extend([
+                "",
+                f"## Analysis Failures: {len(self.analysis_failures)} files",
+                "",
+            ])
+            for name, reason in self.analysis_failures:
+                lines.append(f"- **{name}**: {reason}")
 
-    report_path = target / f".ai-rename-report-{run_id}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+        lines.append("")
+        self.report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _display_impact_summary(impact, use_rich: bool = True) -> None:
@@ -582,6 +625,11 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
     logger = RenameLogger(config.log_dir, run_id, verbose=verbose)
     target = Path(target_directory).resolve()
 
+    # Create the stateful run report — rewritten at each phase transition
+    report = RunReport(target, run_id, config)
+    report.recursive = recursive
+    report.update("starting")
+
     logger.info(f"Starting rename session {run_id}")
     logger.info(f"Target: {target}")
     logger.info(f"Model: {config.model}")
@@ -674,6 +722,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         sys.exit(1)
 
     _display_impact_summary(discovery.impact, use_rich=use_rich)
+    report.update("discovered", discovery=discovery)
 
     if discovery.impact.supported_files == 0:
         click.echo("No supported files found. Nothing to do.")
@@ -722,6 +771,12 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                     f"Skipping {len(skipped_well_named)} already well-named files"
                 )
             processable_files = filtered
+
+        report.update(
+            "analyzing",
+            skipped_well_named=skipped_well_named,
+            analyzed_count=len(processable_files),
+        )
 
         logger.info(f"Preprocessing {len(processable_files)} files...")
         with _phase_status(console, f"Preprocessing {len(processable_files)} files"):
@@ -867,6 +922,15 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             files_being_renamed=files_being_renamed,
         )
 
+    # Update report with proposed renames
+    _analysis_failed = skipped_analysis_failed if 'skipped_analysis_failed' in dir() else []
+    report.update(
+        "proposed",
+        validated=validated,
+        total_tokens=total_tokens,
+        analysis_failures=_analysis_failed,
+    )
+
     # Phase 7: Dry-run display
     _display_dry_run(validated, use_rich=use_rich, skipped_well_named=skipped_well_named)
 
@@ -875,6 +939,9 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         if not execute:
             click.echo("No changes made.")
             return
+
+    did_execute = False
+    result = None
 
     if execute or (headless and not dry_run):
         # Phase 8: Execution
@@ -903,6 +970,9 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             + total_tokens["output_tokens"] * model_costs.get("output", 0.0),
             4,
         )
+
+        did_execute = True
+        report.update("completed", executed=True, result=result)
 
         _display_execution_result(result, use_rich=use_rich)
 
@@ -956,24 +1026,13 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
 
         logger.info(f"Session {run_id} complete.")
 
-    # --- Write run report to target directory ---
-    _did_execute = 'result' in dir() and result is not None
-    _analysis_failed = skipped_analysis_failed if 'skipped_analysis_failed' in dir() else []
-    _write_run_report(
-        target=target,
-        run_id=run_id,
-        config=config,
-        discovery=discovery,
-        validated=validated,
-        total_tokens=total_tokens,
-        skipped_well_named=skipped_well_named,
-        skipped_analysis_failed=_analysis_failed,
-        executed=_did_execute,
-        result=result if _did_execute else None,
-    )
-    logger.info(f"Report written to {target / f'.ai-rename-report-{run_id}.md'}")
+    # Final report update for dry-run path (execution path already updated above)
+    if not did_execute:
+        report.update("dry-run-complete")
+    logger.info(f"Report: {report.report_path}")
 
     # --- Run Summary (logged for ALL runs including dry-run) ---
+    _analysis_failed = report.analysis_failures
     analysis_failed_count = len(_analysis_failed)
     well_named_count = len(skipped_well_named)
     total_token_count = total_tokens["input_tokens"] + total_tokens["output_tokens"]

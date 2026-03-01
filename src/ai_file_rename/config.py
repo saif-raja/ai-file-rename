@@ -52,7 +52,10 @@ class Config(BaseModel):
     # Include / Exclude
     include_patterns: list[str] = Field(default_factory=list)
     exclude_patterns: list[str] = Field(
-        default_factory=lambda: [".*", "*.tmp", "node_modules", "__pycache__", ".git"]
+        default_factory=lambda: [
+            ".*", "*.tmp", "node_modules", "__pycache__", ".git",
+            ".ai-rename-report-*", ".ai-rename-manifest.json",
+        ]
     )
 
     model_config = {"arbitrary_types_allowed": True}

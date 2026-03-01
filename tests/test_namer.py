@@ -25,6 +25,7 @@ from ai_file_rename.namer import (
     _format_file_summary,
     _name_single_file,
     _parse_naming_response,
+    name_folder,
     select_strategy,
 )
 
@@ -313,3 +314,194 @@ class TestSingleFileOptimization:
         renames = _name_single_file(analyzed, config)
         assert len(renames) == 1
         assert renames[0].is_unchanged == (renames[0].proposed_name == "sunset.jpg")
+
+
+# --- ISSUE-01: Error filtering tests ---
+
+
+def _make_analyzed_with_confidence(
+    name: str, content_type: str, subject: str, parent: Path, confidence: float
+) -> AnalyzedFile:
+    """Helper with explicit confidence control."""
+    af = _make_analyzed(name, content_type, subject, parent)
+    af.summary.confidence = confidence
+    return af
+
+
+class TestErrorFiltering:
+    """Tests for ISSUE-01: files with failed analysis are excluded from naming."""
+
+    @pytest.mark.asyncio
+    async def test_name_folder_excludes_error_files(self):
+        """Files with content_type='error' are excluded from naming."""
+        folder = Path("/tmp/mixed")
+        good_file = _make_analyzed("photo.jpg", "photograph", "A sunset", folder)
+        error_file = _make_analyzed_with_confidence(
+            "broken.mov", "error", "Analysis failed: 400 FAILED_PRECONDITION", folder, 0.0
+        )
+
+        context = _make_folder_context(folder, [good_file, error_file])
+
+        # With 1 good file, single-file optimization kicks in (no LLM call)
+        config = Config(gemini_api_key="test")
+        renames, tokens = await name_folder(
+            folder, [good_file, error_file], context, None, "gemini-2.5-flash", config
+        )
+
+        assert len(renames) == 1
+        assert renames[0].current_name == "photo.jpg"
+        # No LLM call needed (single-file optimization)
+        assert tokens["input_tokens"] == 0
+
+    @pytest.mark.asyncio
+    async def test_name_folder_excludes_unknown_content_type(self):
+        """Files with content_type='unknown' are excluded."""
+        folder = Path("/tmp/test")
+        unknown_file = _make_analyzed_with_confidence(
+            "weird.bin", "unknown", "Analysis failed: unsupported format", folder, 0.0
+        )
+
+        context = _make_folder_context(folder, [unknown_file])
+        config = Config(gemini_api_key="test")
+        renames, tokens = await name_folder(
+            folder, [unknown_file], context, None, "gemini-2.5-flash", config
+        )
+
+        assert len(renames) == 0
+
+    @pytest.mark.asyncio
+    async def test_name_folder_excludes_low_confidence(self):
+        """Files with confidence < 0.1 are excluded."""
+        folder = Path("/tmp/test")
+        low_conf = _make_analyzed_with_confidence(
+            "maybe.pdf", "document", "Possibly a report", folder, 0.05
+        )
+
+        context = _make_folder_context(folder, [low_conf])
+        config = Config(gemini_api_key="test")
+        renames, tokens = await name_folder(
+            folder, [low_conf], context, None, "gemini-2.5-flash", config
+        )
+
+        assert len(renames) == 0
+
+    @pytest.mark.asyncio
+    async def test_name_folder_keeps_good_files_with_errors_present(self):
+        """Good files are still named even when some files have errors."""
+        folder = Path("/tmp/mixed")
+        good1 = _make_analyzed("doc1.pdf", "document", "Revenue report", folder)
+        good2 = _make_analyzed("doc2.pdf", "document", "Security audit", folder)
+        error = _make_analyzed_with_confidence(
+            "bad.mov", "error", "API error 500", folder, 0.0
+        )
+
+        context = _make_folder_context(folder, [good1, good2, error])
+
+        # Mock the Gemini client for the 2 good files
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "renames": [
+                {"current_name": "doc1.pdf", "proposed_name": "revenue-report.pdf",
+                 "reasoning": "test", "confidence": 0.9},
+                {"current_name": "doc2.pdf", "proposed_name": "security-audit.pdf",
+                 "reasoning": "test", "confidence": 0.85},
+            ]
+        })
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        config = Config(gemini_api_key="test")
+        renames, tokens = await name_folder(
+            folder, [good1, good2, error], context, mock_client, "gemini-2.5-flash", config
+        )
+
+        assert len(renames) == 2
+        names = {r.proposed_name for r in renames}
+        assert "revenue-report.pdf" in names
+        assert "security-audit.pdf" in names
+
+    @pytest.mark.asyncio
+    async def test_name_folder_excludes_skipped_files(self):
+        """Files with content_type='skipped' are excluded."""
+        folder = Path("/tmp/test")
+        skipped = _make_analyzed_with_confidence(
+            "modified.txt", "skipped", "File modified during processing", folder, 0.0
+        )
+
+        context = _make_folder_context(folder, [skipped])
+        config = Config(gemini_api_key="test")
+        renames, _ = await name_folder(
+            folder, [skipped], context, None, "gemini-2.5-flash", config
+        )
+
+        assert len(renames) == 0
+
+
+# --- Naming logging tests ---
+
+
+class TestNamingLogging:
+    """Tests for per-file naming logging."""
+
+    def test_parse_response_logs_debug(self):
+        """_parse_naming_response emits debug logs for each rename."""
+        response = json.dumps({
+            "renames": [
+                {"current_name": "a.txt", "proposed_name": "alpha.txt",
+                 "reasoning": "test reason", "confidence": 0.9},
+            ]
+        })
+        folder = Path("/tmp/test")
+        files = [_make_analyzed("a.txt", "document", "Alpha doc", folder)]
+
+        mock_logger = MagicMock()
+        _parse_naming_response(response, files, folder, logger=mock_logger)
+
+        # Should have logged at debug level for the parse
+        mock_logger.debug.assert_called()
+        debug_msg = mock_logger.debug.call_args[0][0]
+        assert "a.txt" in debug_msg
+        assert "alpha.txt" in debug_msg
+
+    def test_parse_response_warns_on_missing_file(self):
+        """_parse_naming_response warns when a file is in response but not input."""
+        response = json.dumps({
+            "renames": [
+                {"current_name": "ghost.txt", "proposed_name": "phantom.txt",
+                 "reasoning": "test", "confidence": 0.5},
+            ]
+        })
+
+        mock_logger = MagicMock()
+        _parse_naming_response(response, [], Path("/tmp"), logger=mock_logger)
+
+        mock_logger.warning.assert_called()
+        warn_msg = mock_logger.warning.call_args[0][0]
+        assert "ghost.txt" in warn_msg
+
+    def test_parse_response_warns_on_unmatched_input(self):
+        """Warns when an input file is not found in the response."""
+        response = json.dumps({"renames": []})
+        folder = Path("/tmp/test")
+        files = [_make_analyzed("orphan.txt", "document", "Orphan doc", folder)]
+
+        mock_logger = MagicMock()
+        _parse_naming_response(response, files, folder, logger=mock_logger)
+
+        mock_logger.warning.assert_called()
+        warn_msg = mock_logger.warning.call_args[0][0]
+        assert "orphan.txt" in warn_msg
+
+    def test_single_file_logs_info(self):
+        """_name_single_file emits an info log with [named:single] tag."""
+        folder = Path("/tmp/single")
+        analyzed = _make_analyzed("IMG_001.jpg", "photograph", "A sunset over the ocean", folder)
+        config = Config(gemini_api_key="test")
+
+        mock_logger = MagicMock()
+        _name_single_file(analyzed, config, logger=mock_logger)
+
+        mock_logger.info.assert_called()
+        info_msg = mock_logger.info.call_args[0][0]
+        assert "named:single" in info_msg or "unchanged" in info_msg
+        assert "deterministic" in info_msg

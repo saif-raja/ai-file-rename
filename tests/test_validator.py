@@ -229,6 +229,39 @@ class TestIsWellNamed:
     def test_well_named_meeting_notes(self):
         assert is_well_named("meeting-notes-project-alpha.txt") is True
 
+    # --- New heuristic tests (ISSUE-02) ---
+
+    def test_version_indicator_v2_not_well_named(self):
+        assert is_well_named("presentation_final_v2_FINAL.pptx") is False
+
+    def test_version_indicator_draft_not_well_named(self):
+        assert is_well_named("architecture-document-draft.md") is False
+
+    def test_repeated_words_not_well_named(self):
+        assert is_well_named("report-final-version-FINAL.pdf") is False
+
+    def test_generic_filler_word_file(self):
+        assert is_well_named("file_with_bad_chars.txt") is False
+
+    def test_generic_filler_word_document(self):
+        assert is_well_named("document-copy-from-server.pdf") is False
+
+    def test_all_caps_tokens_not_well_named(self):
+        assert is_well_named("FINAL-APPROVED-REPORT-BUDGET.xlsx") is False
+
+    def test_still_well_named_with_one_cap(self):
+        """A single ALL_CAPS token (e.g. an acronym) is fine."""
+        assert is_well_named("quarterly-revenue-report-USA.pdf") is True
+
+    def test_well_named_robust_example(self):
+        assert is_well_named("machine-learning-transformer-research.pdf") is True
+
+    def test_version_final_flag_not_well_named(self):
+        assert is_well_named("client-proposal-deck-final.pptx") is False
+
+    def test_temp_indicator_not_well_named(self):
+        assert is_well_named("database-migration-script-temp.sql") is False
+
 
 class TestValidateRenames:
     def _make_rename(self, current: str, proposed: str) -> ProposedRename:

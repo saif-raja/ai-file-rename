@@ -57,6 +57,12 @@ class TestRenameCommand:
         assert result.exit_code != 0
         assert "API key" in result.output or "api" in result.output.lower()
 
+    def test_rename_help_shows_no_skip_well_named(self):
+        """Test that --no-skip-well-named flag appears in help."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["rename", "--help"])
+        assert "--no-skip-well-named" in result.output
+
     def test_rename_vertex_ai_skips_api_key_check(self, tmp_path, monkeypatch):
         """When use_vertex_ai is True, missing API key should not cause exit."""
         # Create a config file that sets use_vertex_ai

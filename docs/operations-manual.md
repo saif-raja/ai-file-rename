@@ -559,22 +559,59 @@ Each file rename follows this sequence:
 5. Record success (status: `completed`)
 6. On ANY failure: stop immediately, preserve manifest for recovery
 
-### Run Reports
+### Run Reports (Live Status File)
 
-Every run (dry-run or executed) writes a markdown report file to the target directory:
+Every run produces a **stateful report file** in the target directory that is updated progressively as the pipeline advances:
 
 ```
-.ai-rename-report-20260228-b5e94d2d.md
+.ai-rename-report-{run_id}.md
 ```
 
-The report contains:
-- Run metadata (run ID, timestamp, model, target, mode)
-- Whether it was a **dry-run** or **executed**
-- Impact summary (files found, analyzed, skipped, cost)
-- A markdown table of all proposed/executed renames
-- Lists of skipped well-named files and analysis failures
+Example: `.ai-rename-report-20260301-501df6ed.md`
 
-Reports are timestamped with the run ID so they are never overwritten. They are listed in `.gitignore` by default.
+**How it works:**
+- The file is created at the start of the run with a fixed timestamp
+- It is rewritten at each phase transition with accumulated data
+- The **Status** field shows the current pipeline phase in real time
+- The final state of this file IS the complete run report
+
+**Phase progression visible in the Status field:**
+
+| Status | What it means |
+|--------|---------------|
+| `starting` | Run initialized, about to discover files |
+| `discovered` | File discovery complete, impact summary available |
+| `analyzing` | Content analysis in progress with Gemini |
+| `proposed` | Names generated — rename table available |
+| `completed` | Renames executed successfully |
+| `dry-run-complete` | Dry-run finished — no files were modified |
+
+**Report contents (cumulative — each phase adds data):**
+- Run metadata: run ID, start timestamp, model, target, recursive flag
+- Current status and mode (dry-run vs executed)
+- Impact summary: files found, supported, unsupported, well-named skipped
+- Token usage and estimated cost
+- Markdown table of all proposed renames (current name / proposed name / notes)
+- Skipped well-named files list
+- Analysis failures list
+- Execution results (renamed/skipped/failed counts) — only after execution
+
+**For humans watching a long-running job:**
+```bash
+# Watch the report file update in real time
+watch -n 2 cat ~/photos/.ai-rename-report-20260301-*.md
+```
+
+**For AI agents running headlessly:**
+The report file is the single source of truth for what happened in a run. After invoking `ai-rename rename <dir> -r -x -H -P`, read the `.ai-rename-report-*.md` file in the target directory to get:
+- Whether the run succeeded (Status = `completed`) or is still running
+- The full rename table (what was renamed and to what)
+- Any analysis failures or warnings
+- Token/cost accounting
+
+This is more structured and reliable than parsing CLI stdout.
+
+Reports are timestamped with the run ID so multiple runs never overwrite each other. They are listed in `.gitignore` by default.
 
 ---
 
