@@ -286,7 +286,6 @@ class ImpactSummary(BaseModel):
     total_files: int
     supported_files: int
     unsupported_files: int
-    already_well_named: int
     symlinks_found: int
     symlink_targets_in_scope: int
     folders_affected: int

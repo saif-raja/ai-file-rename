@@ -281,8 +281,7 @@ The tool scans the target directory and produces an impact summary BEFORE doing 
 ║                                                          ║
 ║  Files found:         247                                ║
 ║  ├── Supported:       231 (will be processed)            ║
-║  ├── Unsupported:      12 (will be skipped)              ║
-║  └── Already named:     4 (appear well-named, skippable) ║
+║  └── Unsupported:      12 (will be skipped)              ║
 ║                                                          ║
 ║  Folders affected:     14                                ║
 ║  Deepest nesting:       4 levels                         ║
@@ -1162,16 +1161,6 @@ These are logged and skipped with a warning.
 | Font files | `.ttf`, `.otf`, `.woff` |
 | 3D models | `.obj`, `.stl`, `.fbx` |
 
-### Already-Well-Named Detection
-
-Before processing a file, the tool runs a quick heuristic to determine if the current name is already descriptive enough:
-
-1. **Name length:** If the name (without extension) is >15 characters and contains multiple real words, it MAY already be well-named.
-2. **No default patterns:** Check against common default patterns (`IMG_`, `DSC_`, `Screenshot`, `download`, `document`, `Untitled`, `Copy of`, random hex strings, UUIDs).
-3. **Real words:** Tokenize the name by separators and check if tokens are real English words.
-
-If a file is detected as "already well-named," it is flagged in the dry-run preview with a note, and the user can choose to skip or re-process it.
-
 ---
 
 ## 16. Scalability & Batching Strategy
@@ -1264,7 +1253,6 @@ safety:
 processing:
   concurrency: 3           # Max parallel API calls
   convert_office_docs: true # Convert DOCX/PPTX/XLSX to PDF before analysis
-  skip_well_named: true     # Skip files that appear already well-named
 
 # Logging
 logging:

@@ -35,7 +35,6 @@ from ai_file_rename.models import (
     FileCategory,
     ValidatedRename,
 )
-from ai_file_rename.validator import is_well_named
 
 
 def _generate_run_id() -> str:
@@ -77,7 +76,6 @@ class RenamePlan:
     """
     discovery: DiscoveryResult
     validated_renames: list[ValidatedRename]
-    skipped_well_named: list[str] = field(default_factory=list)
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     run_id: str = ""
     target_directory: Path = Path(".")
@@ -207,29 +205,17 @@ class RenameSession:
             self._last_plan = plan
             return plan
 
-        # Filter well-named files
-        skipped_well_named = []
-        processable_files = []
-        for f in discovery.files:
-            if f.category == FileCategory.UNSUPPORTED or f.skip_reason:
-                continue
-            if self.config.skip_well_named and is_well_named(f.name):
-                skipped_well_named.append(f.name)
-                self.logger.info(f"Skipping well-named: {f.name}")
-                continue
-            processable_files.append(f)
-
-        if skipped_well_named:
-            self.logger.info(
-                f"Skipping {len(skipped_well_named)} already well-named files"
-            )
+        # Filter unsupported files
+        processable_files = [
+            f for f in discovery.files
+            if f.category != FileCategory.UNSUPPORTED and not f.skip_reason
+        ]
 
         if not processable_files:
-            self.logger.info("All files are already well-named.")
+            self.logger.info("No processable files found.")
             plan = RenamePlan(
                 discovery=discovery,
                 validated_renames=[],
-                skipped_well_named=skipped_well_named,
                 run_id=self.run_id,
                 target_directory=self.target_dir,
                 recursive=self.recursive,
@@ -296,7 +282,6 @@ class RenameSession:
             plan = RenamePlan(
                 discovery=discovery,
                 validated_renames=[],
-                skipped_well_named=skipped_well_named,
                 token_usage=token_usage,
                 run_id=self.run_id,
                 target_directory=self.target_dir,
@@ -322,7 +307,6 @@ class RenameSession:
         plan = RenamePlan(
             discovery=discovery,
             validated_renames=validated,
-            skipped_well_named=skipped_well_named,
             token_usage=token_usage,
             run_id=self.run_id,
             target_directory=self.target_dir,
@@ -332,8 +316,7 @@ class RenameSession:
 
         self.logger.info(
             f"Analysis complete: {plan.total_renames} renames proposed, "
-            f"{plan.total_unchanged} unchanged, "
-            f"{len(skipped_well_named)} skipped (well-named)"
+            f"{plan.total_unchanged} unchanged"
         )
 
         return plan
@@ -448,7 +431,6 @@ class RenameSession:
             "files_renamed": result.renamed,
             "files_skipped": result.skipped,
             "files_failed": result.failed,
-            "files_well_named_skipped": len(plan.skipped_well_named),
             "symlinks_updated": result.symlinks_updated,
             "total_tokens": plan.token_usage.total_tokens,
             "input_tokens": plan.token_usage.input_tokens,

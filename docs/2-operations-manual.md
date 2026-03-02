@@ -208,7 +208,6 @@ mode: recursive
 total_files: 45
 supported_files: 38
 unsupported_files: 7
-already_well_named: 3
 folders_affected: 5
 estimated_api_calls: 10
 estimated_cost_usd: 0.02
@@ -255,7 +254,6 @@ status: success
 | `--exclude`              |       | glob    | None               | Glob pattern for files to exclude (e.g., `"*.tmp"`)        |
 | `--skip-converted`       |       | flag    | `False`            | Skip format conversion (DOCX→PDF, SVG→PNG, etc.)          |
 | `--log-level`            |       | choice  | `INFO`             | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`             |
-| `--no-skip-well-named`   |       | flag    | `False`            | Disable the well-named heuristic — analyze ALL files       |
 
 ### Flag Interactions
 
@@ -295,7 +293,6 @@ export AI_RENAME_COST_LIMIT="10.00"
 export AI_RENAME_SEPARATOR="_"
 export AI_RENAME_MAX_WORDS="10"
 export AI_RENAME_LOG_LEVEL="DEBUG"
-export AI_RENAME_SKIP_WELL_NAMED="false"
 ```
 
 ### YAML Config File
@@ -321,7 +318,6 @@ safety:
 processing:
   concurrency: 3
   convert_office_docs: true
-  skip_well_named: true
 
 logging:
   log_level: INFO
@@ -355,7 +351,6 @@ exclude_patterns:
 | `require_confirmation`| bool       | `true`                      | Require user confirmation (disabled by `--headless`)  |
 | `concurrency`         | int        | `3`                         | Max concurrent API calls                              |
 | `convert_office_docs` | bool       | `true`                      | Convert DOCX/PPTX/XLSX to PDF for analysis            |
-| `skip_well_named`     | bool       | `true`                      | Skip files that already have descriptive names        |
 | `log_level`           | string     | `INFO`                      | Logging level                                         |
 | `log_dir`             | path       | `~/.ai-rename/logs`         | Directory for log files                               |
 | `include_patterns`    | list[str]  | `[]`                        | Glob patterns for files to include                    |
@@ -451,36 +446,6 @@ All generated names follow these cross-platform constraints:
 - Maximum 200 characters including extension
 - Extension is never changed
 - Each name is unique within its folder
-
-### Well-Named Detection (Smart Skip)
-
-Files that already have descriptive names are automatically skipped to save API calls and processing time. This is one of the tool's most cost-effective features — in a folder of 100 files where 30 are already well-named, you save ~30% on API costs.
-
-A file is considered "well-named" when ALL of these are true:
-- Stem is at least 15 characters long
-- Contains 3+ semantically meaningful word tokens (excluding filler words like "file", "document", "the", "with")
-- Does not match known auto-generated patterns (IMG_, DSC_, Screenshot, UUID, hex hash, timestamps)
-- No version/draft indicators (`_v2`, `_FINAL`, `_draft`, `_copy`)
-- No repeated words (case-insensitive — catches `report_final_FINAL`)
-- No excessive ALL_CAPS tokens (suggests sloppy/automated naming)
-
-**Examples:**
-
-| Filename | Well-Named? | Why |
-|----------|-------------|-----|
-| `quarterly-revenue-report-2023.pdf` | Yes | Descriptive, specific, clean |
-| `meeting-notes-project-alpha.txt` | Yes | Descriptive, specific |
-| `IMG_20190412_143022.jpg` | No | Camera auto-generated |
-| `presentation_final_v2_FINAL.pptx` | No | Version indicator, repeated word |
-| `document(1).pdf` | No | Too short, numbered duplicate |
-| `file_with_bad_chars.txt` | No | Generic filler word "file" |
-
-**To bypass:** Use `--no-skip-well-named` to force analysis of ALL files:
-```bash
-ai-rename rename ~/docs --no-skip-well-named
-```
-
-Or set `skip_well_named: false` in `~/.ai-rename.yaml`.
 
 ---
 
@@ -589,10 +554,9 @@ Example: `.ai-rename-report-20260301-501df6ed.md`
 **Report contents (cumulative — each phase adds data):**
 - Run metadata: run ID, start timestamp, model, target, recursive flag
 - Current status and mode (dry-run vs executed)
-- Impact summary: files found, supported, unsupported, well-named skipped
+- Impact summary: files found, supported, unsupported
 - Token usage and estimated cost
 - Markdown table of all proposed renames (current name / proposed name / notes)
-- Skipped well-named files list
 - Analysis failures list
 - Execution results (renamed/skipped/failed counts) — only after execution
 
@@ -639,10 +603,9 @@ If the estimated cost exceeds the limit, the tool warns and asks for confirmatio
 ### Minimizing Costs
 
 1. **Use `gemini-2.0-flash`** for the cheapest option: `--model gemini-2.0-flash`
-2. **Skip well-named files** (enabled by default): files with descriptive names are not analyzed
-3. **Use `--include` to target specific file types**: `--include "*.jpg"`
-4. **Single-file optimization** automatically saves one API call per single-file folder
-5. **Always dry-run first** to see the impact assessment before committing
+2. **Use `--include` to target specific file types**: `--include "*.jpg"`
+3. **Single-file optimization** automatically saves one API call per single-file folder
+4. **Always dry-run first** to see the impact assessment before committing
 
 ### API Limits
 

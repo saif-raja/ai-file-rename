@@ -47,7 +47,6 @@ def _make_discovery(target: Path) -> DiscoveryResult:
         total_files=10,
         supported_files=8,
         unsupported_files=2,
-        already_well_named=3,
         symlinks_found=0,
         symlink_targets_in_scope=0,
         folders_affected=1,
@@ -187,20 +186,6 @@ class TestRunReportStateful:
         assert "**completed**" in content
         assert "**executed**" in content  # mode field
         assert "Files renamed: 1" in content
-
-    def test_well_named_section(self, temp_dir):
-        """Well-named files appear when set."""
-        report = _make_report(temp_dir)
-        report.update("discovered", discovery=_make_discovery(temp_dir))
-        report.update(
-            "analyzing",
-            skipped_well_named=["quarterly-revenue-report.pdf", "meeting-notes-alpha.txt"],
-            analyzed_count=4,
-        )
-
-        content = report.report_path.read_text()
-        assert "quarterly-revenue-report.pdf" in content
-        assert "meeting-notes-alpha.txt" in content
 
     def test_analysis_failures_section(self, temp_dir):
         """Analysis failures appear when set."""

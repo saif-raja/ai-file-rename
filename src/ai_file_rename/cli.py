@@ -86,7 +86,6 @@ class RunReport:
         self.status = "initializing"
         self.recursive = False
         self.discovery = None
-        self.skipped_well_named: list = []
         self.analyzed_count = 0
         self.analysis_failures: list = []   # list of (name, reason)
         self.validated: list = []
@@ -140,12 +139,9 @@ class RunReport:
                 f"({imp.supported_files} supported, "
                 f"{imp.unsupported_files} unsupported)",
             ])
-            if self.analyzed_count or self.skipped_well_named:
+            if self.analyzed_count:
                 lines.append(
                     f"- Files analyzed: {self.analyzed_count}"
-                )
-                lines.append(
-                    f"- Skipped (well-named): {len(self.skipped_well_named)}"
                 )
             if self.analysis_failures:
                 lines.append(
@@ -199,16 +195,6 @@ class RunReport:
                     f"| {v.final_name} | {notes} |"
                 )
 
-        # Well-named files
-        if self.skipped_well_named:
-            lines.extend([
-                "",
-                f"## Skipped (well-named): {len(self.skipped_well_named)} files",
-                "",
-            ])
-            for name in self.skipped_well_named:
-                lines.append(f"- {name}")
-
         # Analysis failures
         if self.analysis_failures:
             lines.extend([
@@ -241,7 +227,6 @@ def _display_impact_summary(impact, use_rich: bool = True) -> None:
                 f"Files found:      {impact.total_files}",
                 f"  Supported:      {impact.supported_files} (will be processed)",
                 f"  Unsupported:    {impact.unsupported_files} (will be skipped)",
-                f"  Already named:  {impact.already_well_named} (appear well-named)",
                 "",
                 f"Folders affected: {impact.folders_affected}",
                 f"Deepest nesting:  {impact.deepest_nesting} levels",
@@ -290,7 +275,6 @@ def _display_impact_summary(impact, use_rich: bool = True) -> None:
     print(f"total_files: {impact.total_files}")
     print(f"supported_files: {impact.supported_files}")
     print(f"unsupported_files: {impact.unsupported_files}")
-    print(f"already_well_named: {impact.already_well_named}")
     print(f"folders_affected: {impact.folders_affected}")
     print(f"deepest_nesting: {impact.deepest_nesting}")
     print(f"symlinks_found: {impact.symlinks_found}")
@@ -303,8 +287,8 @@ def _display_impact_summary(impact, use_rich: bool = True) -> None:
     print()
 
 
-def _display_dry_run(renames, use_rich: bool = True, skipped_well_named: list = None) -> None:
-    """Display the proposed renames table and any skipped well-named files."""
+def _display_dry_run(renames, use_rich: bool = True) -> None:
+    """Display the proposed renames table."""
     rich_available = False
     if use_rich:
         try:
@@ -354,19 +338,6 @@ def _display_dry_run(renames, use_rich: bool = True, skipped_well_named: list = 
             )
         print()
 
-    # Display skipped well-named files
-    if skipped_well_named:
-        count = len(skipped_well_named)
-        if rich_available:
-            console.print(
-                f"\n[dim]Skipped (already well-named): {count} file{'s' if count != 1 else ''}[/dim]"
-            )
-            for name in skipped_well_named:
-                console.print(f"[dim]  - {name}[/dim]")
-        else:
-            print(f"\nSkipped (already well-named): {count} file{'s' if count != 1 else ''}")
-            for name in skipped_well_named:
-                print(f"  - {name}")
 
 
 def _interactive_review(
@@ -575,12 +546,9 @@ def main():
 )
 @click.option("--plain", "-P", is_flag=True, default=False,
               help="Plain text output (no Rich formatting). Best for agent/script consumption.")
-@click.option("--no-skip-well-named", is_flag=True, default=False,
-              help="Disable the well-named heuristic — analyze ALL files regardless of current name.")
 def rename(target_directory, recursive, execute, headless, config_path, model,
            max_files, custom_instructions, verbose, cost_limit,
-           dry_run, include, exclude, skip_converted, log_level, plain,
-           no_skip_well_named):
+           dry_run, include, exclude, skip_converted, log_level, plain):
     """Rename files using AI-powered content analysis."""
     # Build CLI overrides
     overrides = {}
@@ -602,9 +570,6 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         overrides["convert_office_docs"] = False
     if log_level is not None:
         overrides["log_level"] = log_level.upper()
-    if no_skip_well_named:
-        overrides["skip_well_named"] = False
-
     # --dry-run explicitly disables execute mode
     if dry_run:
         execute = False
@@ -747,8 +712,6 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
 
     # Phase 2: Preprocessing
     from ai_file_rename.preprocessing import preprocess
-    from ai_file_rename.validator import is_well_named
-
     with tempfile.TemporaryDirectory(prefix="ai-rename-") as tmp:
         tmp_dir = Path(tmp)
 
@@ -757,24 +720,8 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             if f.category.value != "unsupported"
         ]
 
-        # Filter out already well-named files to save API calls
-        skipped_well_named = []
-        if config.skip_well_named:
-            filtered = []
-            for f in processable_files:
-                if is_well_named(f.name):
-                    skipped_well_named.append(f.name)
-                else:
-                    filtered.append(f)
-            if skipped_well_named:
-                logger.info(
-                    f"Skipping {len(skipped_well_named)} already well-named files"
-                )
-            processable_files = filtered
-
         report.update(
             "analyzing",
-            skipped_well_named=skipped_well_named,
             analyzed_count=len(processable_files),
         )
 
@@ -932,7 +879,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
     )
 
     # Phase 7: Dry-run display
-    _display_dry_run(validated, use_rich=use_rich, skipped_well_named=skipped_well_named)
+    _display_dry_run(validated, use_rich=use_rich)
 
     if not execute and not headless:
         validated, execute = _interactive_review(validated)
@@ -1034,7 +981,6 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
     # --- Run Summary (logged for ALL runs including dry-run) ---
     _analysis_failed = report.analysis_failures
     analysis_failed_count = len(_analysis_failed)
-    well_named_count = len(skipped_well_named)
     total_token_count = total_tokens["input_tokens"] + total_tokens["output_tokens"]
 
     logger.info("=== RUN SUMMARY ===")
@@ -1043,10 +989,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         f"({discovery.impact.supported_files} supported, "
         f"{discovery.impact.unsupported_files} unsupported)"
     )
-    logger.info(
-        f"Files analyzed: {len(processable_files)} "
-        f"({well_named_count} skipped well-named)"
-    )
+    logger.info(f"Files analyzed: {len(processable_files)}")
     if analysis_failed_count:
         logger.info(f"Analysis failures: {analysis_failed_count}")
     logger.info(

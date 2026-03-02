@@ -96,20 +96,6 @@ CONVERSION_MAP: dict[str, tuple[str, callable]] = {
 }
 
 
-def _read_text_content(file_path: Path, max_lines: int = 500) -> Optional[str]:
-    """Read text content from a text-extractable file."""
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            lines = []
-            for i, line in enumerate(f):
-                if i >= max_lines:
-                    break
-                lines.append(line)
-        return "".join(lines)
-    except Exception:
-        return None
-
-
 def preprocess(
     files: list[FileEntry],
     temp_dir: Path,

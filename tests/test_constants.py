@@ -7,12 +7,9 @@ import pytest
 from ai_file_rename.constants import (
     API_LIMITS,
     CONTENT_ANALYSIS_PROMPT,
-    CONVERSION_MAP,
     COST_PER_TOKEN,
-    DEFAULT_PATTERNS,
     FORMAT_CATEGORIES,
     HOLISTIC_NAMING_PROMPT,
-    METADATA_EXTRACTORS_MAP,
     MIME_TYPE_MAP,
     NAMING_RULES,
 )
@@ -67,22 +64,6 @@ class TestMimeTypeMap:
                 assert ext in MIME_TYPE_MAP, f"No MIME type for '{ext}'"
 
 
-class TestConversionMap:
-    def test_svg_converts_to_png(self):
-        target, _ = CONVERSION_MAP["svg"]
-        assert target == "png"
-
-    def test_docx_converts_to_pdf(self):
-        target, _ = CONVERSION_MAP["docx"]
-        assert target == "pdf"
-
-    def test_all_convertible_have_mapping(self):
-        """Every convertible format should have a conversion mapping."""
-        for ext, cat in FORMAT_CATEGORIES.items():
-            if cat == "convertible":
-                assert ext in CONVERSION_MAP, f"No conversion mapping for '{ext}'"
-
-
 class TestNamingRules:
     def test_max_length(self):
         assert NAMING_RULES["max_name_length"] == 200
@@ -117,39 +98,6 @@ class TestNamingRules:
         assert "NUL" in reserved
         assert "COM1" in reserved
         assert "LPT1" in reserved
-
-
-class TestDefaultPatterns:
-    def test_img_pattern_matches(self):
-        for pattern in DEFAULT_PATTERNS:
-            if "IMG" in pattern:
-                assert re.search(pattern, "IMG_20190412", re.IGNORECASE)
-                break
-
-    def test_screenshot_pattern_matches(self):
-        matched = False
-        for pattern in DEFAULT_PATTERNS:
-            if re.search(pattern, "Screenshot 2023", re.IGNORECASE):
-                matched = True
-                break
-        assert matched
-
-    def test_uuid_pattern_matches(self):
-        uuid = "550e8400-e29b-41d4-a716-446655440000"
-        matched = False
-        for pattern in DEFAULT_PATTERNS:
-            if re.search(pattern, uuid, re.IGNORECASE):
-                matched = True
-                break
-        assert matched
-
-    def test_download_pattern_matches(self):
-        matched = False
-        for pattern in DEFAULT_PATTERNS:
-            if re.search(pattern, "download", re.IGNORECASE):
-                matched = True
-                break
-        assert matched
 
 
 class TestContentAnalysisPrompt:

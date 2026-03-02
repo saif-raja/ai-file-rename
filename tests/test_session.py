@@ -107,24 +107,6 @@ class TestRenameSessionAnalyze:
             # Expected — no valid API key
             pass
 
-    def test_analyze_skips_well_named(self, temp_dir):
-        (temp_dir / "quarterly-revenue-report-2023.pdf").write_bytes(b"%PDF test")
-        (temp_dir / "IMG_001.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 50)
-
-        session = RenameSession(
-            target_dir=temp_dir,
-            api_key="fake-key",
-        )
-        # The well-named file should be in skipped_well_named
-        # analyze() will fail at Gemini but we can check discovery
-        try:
-            plan = session.analyze()
-            assert "quarterly-revenue-report-2023.pdf" in plan.skipped_well_named
-        except Exception:
-            # Expected — Gemini call fails
-            pass
-
-
 class TestRenameSessionExecute:
     def test_execute_no_plan_raises(self, temp_dir):
         session = RenameSession(target_dir=temp_dir, api_key="test-key")
@@ -146,7 +128,6 @@ class TestRenameSessionExecute:
                     total_files=0,
                     supported_files=0,
                     unsupported_files=0,
-                    already_well_named=0,
                     symlinks_found=0,
                     symlink_targets_in_scope=0,
                     folders_affected=0,
@@ -191,7 +172,6 @@ class TestRenamePlan:
                     total_files=5,
                     supported_files=5,
                     unsupported_files=0,
-                    already_well_named=0,
                     symlinks_found=0,
                     symlink_targets_in_scope=0,
                     folders_affected=2,
@@ -227,7 +207,6 @@ class TestRenamePlan:
                     final_name="b.pdf",
                 ),
             ],
-            skipped_well_named=["good-file.txt"],
             run_id="test-plan",
             target_directory=temp_dir,
         )

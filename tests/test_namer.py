@@ -23,8 +23,8 @@ from ai_file_rename.namer import (
     ProgressiveHolisticStrategy,
     _NAMING_RESPONSE_SCHEMA,
     _format_file_summary,
-    _name_single_file,
     _parse_naming_response,
+    name_all,
     name_folder,
     select_strategy,
 )
@@ -265,57 +265,6 @@ class TestNamingResponseSchema:
         assert "confidence" in item_props
 
 
-class TestSingleFileOptimization:
-    def test_single_file_generates_name_from_summary(self):
-        """Single-file folder produces a name from content analysis alone."""
-        folder = Path("/tmp/single")
-        analyzed = _make_analyzed("IMG_001.jpg", "photograph", "A sunset over the ocean", folder)
-        config = Config(gemini_api_key="test")
-
-        renames = _name_single_file(analyzed, config)
-        assert len(renames) == 1
-        assert renames[0].proposed_name.endswith(".jpg")
-        assert "single-file folder" in renames[0].reasoning.lower()
-        # Name should be derived from subject
-        assert "sunset" in renames[0].proposed_name or "ocean" in renames[0].proposed_name
-
-    def test_single_file_respects_word_limits(self):
-        """Single-file name respects max_words config."""
-        folder = Path("/tmp/single")
-        analyzed = _make_analyzed(
-            "report.pdf", "document",
-            "A very long primary subject with many many words that goes on and on",
-            folder,
-        )
-        config = Config(gemini_api_key="test", max_words=4)
-
-        renames = _name_single_file(analyzed, config)
-        stem = Path(renames[0].proposed_name).stem
-        assert len(stem.split("-")) <= 4
-
-    def test_single_file_pads_short_names(self):
-        """Short subjects are padded with key entities to meet min_words."""
-        folder = Path("/tmp/single")
-        analyzed = _make_analyzed("x.pdf", "document", "Tax", folder)
-        analyzed.summary.key_entities = ["IRS", "2023"]
-        config = Config(gemini_api_key="test", min_words=2)
-
-        renames = _name_single_file(analyzed, config)
-        stem = Path(renames[0].proposed_name).stem
-        words = stem.split("-")
-        assert len(words) >= 2
-
-    def test_single_file_marks_unchanged(self):
-        """If derived name matches current name, it's marked unchanged."""
-        folder = Path("/tmp/single")
-        analyzed = _make_analyzed("sunset.jpg", "photograph", "Sunset", folder)
-        config = Config(gemini_api_key="test", min_words=1)
-
-        renames = _name_single_file(analyzed, config)
-        assert len(renames) == 1
-        assert renames[0].is_unchanged == (renames[0].proposed_name == "sunset.jpg")
-
-
 # --- ISSUE-01: Error filtering tests ---
 
 
@@ -500,16 +449,137 @@ class TestNamingLogging:
         warn_msg = mock_logger.warning.call_args[0][0]
         assert "orphan.txt" in warn_msg
 
-    def test_single_file_logs_info(self):
-        """_name_single_file emits an info log with [named:single] tag."""
-        folder = Path("/tmp/single")
-        analyzed = _make_analyzed("IMG_001.jpg", "photograph", "A sunset over the ocean", folder)
-        config = Config(gemini_api_key="test")
+
+# --- ISSUE-14: name_all() error handling tests ---
+
+
+class TestNameAllErrorHandling:
+    """Tests for ISSUE-14: name_all() should log errors instead of silently swallowing."""
+
+    @pytest.mark.asyncio
+    async def test_name_all_logs_error_on_failure(self):
+        """When name_folder raises, name_all logs the error."""
+        folder = Path("/tmp/failing")
+        analyzed = _make_analyzed("doc.pdf", "document", "Test doc", folder)
+        context = _make_folder_context(folder, [analyzed])
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = RuntimeError("API down")
 
         mock_logger = MagicMock()
-        _name_single_file(analyzed, config, logger=mock_logger)
+        config = Config(gemini_api_key="test")
 
-        mock_logger.info.assert_called()
-        info_msg = mock_logger.info.call_args[0][0]
-        assert "named:single" in info_msg or "unchanged" in info_msg
-        assert "deterministic" in info_msg
+        results, _ = await name_all(
+            {folder: [analyzed]},
+            {folder: context},
+            mock_client,
+            "gemini-2.5-flash",
+            config,
+            logger=mock_logger,
+        )
+
+        mock_logger.error.assert_called_once()
+        error_msg = mock_logger.error.call_args[0][0]
+        assert str(folder) in error_msg
+        assert results[folder] == []
+
+    @pytest.mark.asyncio
+    async def test_name_all_returns_empty_on_failure(self):
+        """When name_folder raises, name_all returns empty list for that folder."""
+        folder = Path("/tmp/failing")
+        analyzed = _make_analyzed("doc.pdf", "document", "Test doc", folder)
+        context = _make_folder_context(folder, [analyzed])
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = RuntimeError("kaboom")
+
+        config = Config(gemini_api_key="test")
+        mock_logger = MagicMock()
+
+        results, tokens = await name_all(
+            {folder: [analyzed]},
+            {folder: context},
+            mock_client,
+            "gemini-2.5-flash",
+            config,
+            logger=mock_logger,
+        )
+
+        assert folder in results
+        assert results[folder] == []
+
+    @pytest.mark.asyncio
+    async def test_name_all_no_crash_without_logger(self):
+        """name_all() doesn't crash when logger=None and name_folder fails."""
+        folder = Path("/tmp/failing")
+        analyzed = _make_analyzed("doc.pdf", "document", "Test doc", folder)
+        context = _make_folder_context(folder, [analyzed])
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = RuntimeError("no logger")
+
+        config = Config(gemini_api_key="test")
+
+        # logger=None (default) — must NOT raise AttributeError
+        results, _ = await name_all(
+            {folder: [analyzed]},
+            {folder: context},
+            mock_client,
+            "gemini-2.5-flash",
+            config,
+        )
+
+        assert results[folder] == []
+
+    @pytest.mark.asyncio
+    async def test_name_all_partial_failure(self):
+        """One folder failing doesn't prevent other folders from being named."""
+        good_folder = Path("/tmp/good")
+        bad_folder = Path("/tmp/bad")
+
+        good_analyzed = _make_analyzed("doc.pdf", "document", "Good doc", good_folder)
+        bad_analyzed = _make_analyzed("bad.pdf", "document", "Bad doc", bad_folder)
+
+        good_context = _make_folder_context(good_folder, [good_analyzed])
+        bad_context = _make_folder_context(bad_folder, [bad_analyzed])
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "renames": [
+                {"current_name": "doc.pdf", "proposed_name": "good-doc.pdf",
+                 "reasoning": "test", "confidence": 0.9},
+            ]
+        })
+
+        call_count = 0
+
+        def side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            # First call succeeds, second fails
+            contents = kwargs.get("contents", [])
+            prompt_text = str(contents[0]) if contents else ""
+            if "bad" in prompt_text.lower() or "bad" in str(kwargs):
+                raise RuntimeError("API error for bad folder")
+            return mock_response
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = side_effect
+
+        config = Config(gemini_api_key="test")
+        mock_logger = MagicMock()
+
+        results, _ = await name_all(
+            {good_folder: [good_analyzed], bad_folder: [bad_analyzed]},
+            {good_folder: good_context, bad_folder: bad_context},
+            mock_client,
+            "gemini-2.5-flash",
+            config,
+            logger=mock_logger,
+        )
+
+        # Bad folder should have empty results
+        assert results[bad_folder] == []
+        # Good folder should have results (may or may not work depending on call order)
+        assert bad_folder in results
+

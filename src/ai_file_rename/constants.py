@@ -4,14 +4,11 @@ Constants for the AI File Rename tool.
 This module defines all constants used across the pipeline:
 - FORMAT_CATEGORIES: Maps file extensions to processing categories.
 - MIME_TYPE_MAP: Maps extensions to MIME types for Gemini uploads.
-- CONVERSION_MAP: Maps convertible extensions to target formats and converter names.
 - NAMING_RULES: Cross-platform naming constraints.
-- DEFAULT_PATTERNS: Regex patterns for detecting auto-generated/default file names.
 - CONTENT_ANALYSIS_PROMPT: Prompt template for per-file Gemini content analysis.
 - HOLISTIC_NAMING_PROMPT: Prompt template for per-folder holistic naming.
 - API_LIMITS: Gemini File API and request limits.
 - COST_PER_TOKEN: Approximate token costs per Gemini model.
-- METADATA_EXTRACTORS_MAP: Maps extensions to metadata extractor function names.
 
 All prompt templates use {placeholder} syntax compatible with ``str.format()``
 or ``str.format_map()``.
@@ -223,30 +220,7 @@ MIME_TYPE_MAP: Final[dict[str, str]] = {
 # ---------------------------------------------------------------------------
 # 3. CONVERSION_MAP
 # ---------------------------------------------------------------------------
-# Maps convertible extensions to a tuple of:
-#   (target_format_extension, converter_function_name)
-#
-# The converter function name is used for dispatch in preprocessing.py.
-# ---------------------------------------------------------------------------
-
-CONVERSION_MAP: Final[dict[str, tuple[str, str]]] = {
-    # Image conversions (to PNG via Pillow / cairosvg)
-    "svg": ("png", "convert_svg_to_png"),
-    "gif": ("png", "convert_gif_to_png"),
-    "bmp": ("png", "convert_bmp_to_png"),
-    "tiff": ("png", "convert_tiff_to_png"),
-    "tif": ("png", "convert_tiff_to_png"),
-    # Office document conversions (to PDF via LibreOffice headless)
-    "docx": ("pdf", "convert_office_to_pdf"),
-    "pptx": ("pdf", "convert_office_to_pdf"),
-    "xlsx": ("pdf", "convert_office_to_pdf"),
-    "doc": ("pdf", "convert_office_to_pdf"),
-    "ppt": ("pdf", "convert_office_to_pdf"),
-    "xls": ("pdf", "convert_office_to_pdf"),
-}
-
-# ---------------------------------------------------------------------------
-# 4. NAMING_RULES
+# 3. NAMING_RULES
 # ---------------------------------------------------------------------------
 # Cross-platform file-naming constraints.  These are the intersection of the
 # most restrictive rules across Windows, macOS, and Linux so that a file
@@ -277,46 +251,7 @@ NAMING_RULES: Final[dict[str, object]] = {
 }
 
 # ---------------------------------------------------------------------------
-# 5. DEFAULT_PATTERNS
-# ---------------------------------------------------------------------------
-# Regex patterns that match file names likely generated automatically by
-# cameras, browsers, operating systems, or applications.  A match indicates
-# the file would benefit from renaming.
-#
-# Each pattern is compiled against the file *stem* (name without extension),
-# case-insensitively.
-# ---------------------------------------------------------------------------
-
-DEFAULT_PATTERNS: Final[list[str]] = [
-    # Camera / device prefixes
-    r"^IMG_",
-    r"^DSC_",
-    r"^DSCN",
-    r"^DCIM",
-    r"^DJI_",
-    r"^P\d{7,}",           # e.g. P1000234  (Panasonic / Nikon)
-    # Screenshots and downloads
-    r"^Screenshot",
-    r"^Screen\s?Shot",
-    r"^Captura\s?de\s?pantalla",  # Spanish screenshot
-    r"^download",
-    r"^Untitled",
-    r"^document",
-    r"^Copy\s+of\s+",
-    # UUID pattern (8-4-4-4-12 hex)
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    # Hex hash (8+ contiguous hex characters and nothing else meaningful)
-    r"^[0-9a-f]{8,}$",
-    # Numbered duplicates — e.g. "report (1)", "photo (2)"
-    r"\(\d+\)\s*$",
-    # Timestamp-heavy names (YYYYMMDD_HHMMSS or similar)
-    r"^\d{8}[_-]\d{4,6}$",
-    # Generic numbered sequences — e.g. "image001", "file_0023"
-    r"^(?:image|file|photo|video|audio|recording|clip|scan|page|doc)\s*[-_]?\d+$",
-]
-
-# ---------------------------------------------------------------------------
-# 6. CONTENT_ANALYSIS_PROMPT
+# 5. CONTENT_ANALYSIS_PROMPT
 # ---------------------------------------------------------------------------
 # Prompt template sent to Gemini for per-file content analysis (Step 3 of
 # the pipeline).  The structured JSON response is parsed into a
@@ -513,53 +448,4 @@ COST_PER_TOKEN: Final[dict[str, dict[str, float]]] = {
         "input": 0.000_001_25,   # $1.25 per 1M input tokens
         "output": 0.000_005_00,  # $5.00 per 1M output tokens
     },
-}
-
-# ---------------------------------------------------------------------------
-# 10. METADATA_EXTRACTORS_MAP
-# ---------------------------------------------------------------------------
-# Maps lowercase file extensions to the name of the extractor function that
-# should be called in metadata.py.  Used for dispatch:
-#
-#   func_name = METADATA_EXTRACTORS_MAP.get(ext)
-#   if func_name:
-#       extractor = getattr(metadata_module, func_name)
-#       result = extractor(file_path)
-# ---------------------------------------------------------------------------
-
-METADATA_EXTRACTORS_MAP: Final[dict[str, str]] = {
-    # Image EXIF (Pillow)
-    "jpeg": "extract_image_exif",
-    "jpg": "extract_image_exif",
-    "png": "extract_image_metadata",
-    "heic": "extract_image_exif",
-    "heif": "extract_image_exif",
-    "tiff": "extract_image_exif",
-    "tif": "extract_image_exif",
-    "webp": "extract_image_metadata",
-    "bmp": "extract_image_metadata",
-    "gif": "extract_image_metadata",
-    # Documents
-    "pdf": "extract_pdf_metadata",
-    "docx": "extract_docx_metadata",
-    "doc": "extract_docx_metadata",
-    "pptx": "extract_pptx_metadata",
-    "ppt": "extract_pptx_metadata",
-    "xlsx": "extract_xlsx_metadata",
-    "xls": "extract_xlsx_metadata",
-    # Audio (mutagen)
-    "mp3": "extract_audio_metadata",
-    "wav": "extract_audio_metadata",
-    "flac": "extract_audio_metadata",
-    "ogg": "extract_audio_metadata",
-    "aac": "extract_audio_metadata",
-    "aiff": "extract_audio_metadata",
-    # Video (mutagen / ffprobe)
-    "mp4": "extract_video_metadata",
-    "mov": "extract_video_metadata",
-    "avi": "extract_video_metadata",
-    "mkv": "extract_video_metadata",
-    "webm": "extract_video_metadata",
-    "wmv": "extract_video_metadata",
-    "flv": "extract_video_metadata",
 }

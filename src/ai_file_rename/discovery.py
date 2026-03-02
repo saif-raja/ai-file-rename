@@ -21,7 +21,6 @@ from ai_file_rename.models import (
     ImpactSummary,
     SymlinkEntry,
 )
-from ai_file_rename.validator import is_well_named
 
 
 def _classify_file(extension: str) -> FileCategory:
@@ -201,7 +200,6 @@ def discover(
     file_type_breakdown: dict[str, int] = {}
     warnings: list[str] = []
 
-    well_named_count = 0
     symlinks_found = 0
     symlink_targets_in_scope = set()
 
@@ -256,10 +254,6 @@ def discover(
         elif size > 2 * 1024**3:  # 2 GB
             skip_reason = "File exceeds 2 GB limit"
             category = FileCategory.UNSUPPORTED
-
-        # Check if already well-named
-        if config.skip_well_named and is_well_named(item.name):
-            well_named_count += 1
 
         entry = FileEntry(
             path=item.resolve() if not is_symlink else item,
@@ -345,7 +339,6 @@ def discover(
         total_files=len(files),
         supported_files=supported,
         unsupported_files=unsupported,
-        already_well_named=well_named_count,
         symlinks_found=symlinks_found,
         symlink_targets_in_scope=len(symlink_targets_in_scope),
         folders_affected=len(folders),

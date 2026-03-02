@@ -380,7 +380,6 @@ class ImpactSummary(BaseModel):
     total_files: int
     supported_files: int
     unsupported_files: int
-    already_well_named: int
     symlinks_found: int
     symlink_targets_in_scope: int        # Files that ARE symlink targets (need extra care)
     folders_affected: int
@@ -913,7 +912,6 @@ class Config(BaseModel):
     # Processing
     concurrency: int = 3
     convert_office_docs: bool = True
-    skip_well_named: bool = True
 
     # Logging
     log_level: str = "INFO"

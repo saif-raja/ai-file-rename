@@ -363,3 +363,175 @@ class TestJsonRetry:
         assert mock_client.models.generate_content.call_count == 2
         assert result.summary.content_type == "text"
         assert result.summary.confidence == 0.85
+
+
+# --- ISSUE-13: Gemini file upload cleanup tests ---
+
+
+def _make_uploadable_enriched(tmp_path):
+    """Create an enriched file that triggers the Gemini upload path."""
+    f = tmp_path / "photo.jpg"
+    f.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+    processed = tmp_path / "photo_converted.png"
+    processed.write_bytes(b"\x89PNG" + b"\x00" * 100)
+
+    enriched = EnrichedFile(
+        entry=FileEntry(
+            path=f,
+            name="photo.jpg",
+            stem="photo",
+            extension="jpg",
+            size_bytes=104,
+            category=FileCategory.DIRECTLY_PROCESSABLE,
+            parent_folder=tmp_path,
+        ),
+        metadata=FileMetadata(size_bytes=104, size_human="104 B"),
+        processed_path=processed,
+    )
+    return enriched
+
+
+def _make_folder_context_for(tmp_path, enriched):
+    """Create a FolderContext for a single enriched file."""
+    return FolderContext(
+        folder_path=tmp_path,
+        folder_name="test",
+        breadcrumb="root > test",
+        depth=1,
+        files=[enriched],
+        sibling_names=[enriched.entry.name],
+        file_count=1,
+    )
+
+
+class TestGeminiFileCleanup:
+    """Tests for ISSUE-13: uploaded Gemini files must be cleaned up after use."""
+
+    def test_uploaded_file_deleted_after_success(self, tmp_path):
+        """Uploaded file is deleted from Gemini after successful analysis."""
+        enriched = _make_uploadable_enriched(tmp_path)
+        context = _make_folder_context_for(tmp_path, enriched)
+
+        mock_uploaded = MagicMock()
+        mock_uploaded.name = "files/abc123"
+        mock_uploaded.state = "ACTIVE"
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "content_type": "photograph",
+            "primary_subject": "A sunset",
+            "key_entities": [],
+            "date_references": [],
+            "language": "en",
+            "confidence": 0.9,
+        })
+        mock_response.usage_metadata = None
+
+        mock_client = MagicMock()
+        mock_client.files.upload.return_value = mock_uploaded
+        mock_client.models.generate_content.return_value = mock_response
+
+        asyncio.run(
+            _analyze_single_file(enriched, context, mock_client, "gemini-2.5-flash")
+        )
+
+        # Verify the file was cleaned up
+        mock_client.files.delete.assert_called_once_with(name="files/abc123")
+
+    def test_uploaded_file_deleted_after_failure(self, tmp_path):
+        """Uploaded file is deleted even when generate_content raises."""
+        enriched = _make_uploadable_enriched(tmp_path)
+        context = _make_folder_context_for(tmp_path, enriched)
+
+        mock_uploaded = MagicMock()
+        mock_uploaded.name = "files/def456"
+        mock_uploaded.state = "ACTIVE"
+
+        mock_client = MagicMock()
+        mock_client.files.upload.return_value = mock_uploaded
+        mock_client.models.generate_content.side_effect = RuntimeError("API error")
+
+        asyncio.run(
+            _analyze_single_file(enriched, context, mock_client, "gemini-2.5-flash")
+        )
+
+        # Cleanup should still happen despite the API error
+        mock_client.files.delete.assert_called_once_with(name="files/def456")
+
+    def test_no_cleanup_for_text_files(self, tmp_path):
+        """Text-extractable files don't trigger upload or cleanup."""
+        f = tmp_path / "notes.txt"
+        f.write_text("Meeting notes from Q3 planning session.")
+
+        enriched = EnrichedFile(
+            entry=FileEntry(
+                path=f, name="notes.txt", stem="notes", extension="txt",
+                size_bytes=100, category=FileCategory.TEXT_EXTRACTABLE,
+                parent_folder=tmp_path,
+            ),
+            metadata=FileMetadata(size_bytes=100, size_human="100 B"),
+        )
+        context = _make_folder_context_for(tmp_path, enriched)
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "content_type": "document",
+            "primary_subject": "Meeting notes",
+            "key_entities": [],
+            "date_references": [],
+            "language": "en",
+            "confidence": 0.8,
+        })
+        mock_response.usage_metadata = None
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        asyncio.run(
+            _analyze_single_file(enriched, context, mock_client, "gemini-2.5-flash")
+        )
+
+        # No upload or cleanup should have happened
+        mock_client.files.upload.assert_not_called()
+        mock_client.files.delete.assert_not_called()
+
+    def test_cleanup_failure_logged_at_debug(self, tmp_path):
+        """Failed cleanup is logged at debug level, not silently swallowed."""
+        enriched = _make_uploadable_enriched(tmp_path)
+        context = _make_folder_context_for(tmp_path, enriched)
+
+        mock_uploaded = MagicMock()
+        mock_uploaded.name = "files/ghi789"
+        mock_uploaded.state = "ACTIVE"
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "content_type": "photograph",
+            "primary_subject": "A sunset",
+            "key_entities": [],
+            "date_references": [],
+            "language": "en",
+            "confidence": 0.9,
+        })
+        mock_response.usage_metadata = None
+
+        mock_client = MagicMock()
+        mock_client.files.upload.return_value = mock_uploaded
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client.files.delete.side_effect = RuntimeError("Cleanup failed")
+
+        mock_logger = MagicMock()
+
+        # Should not raise even though cleanup fails
+        result, tokens = asyncio.run(
+            _analyze_single_file(
+                enriched, context, mock_client, "gemini-2.5-flash", logger=mock_logger
+            )
+        )
+
+        # Analysis should still succeed
+        assert result.summary.content_type == "photograph"
+        # Cleanup failure should be logged at debug level
+        mock_logger.debug.assert_called()
+        debug_msg = mock_logger.debug.call_args[0][0]
+        assert "files/ghi789" in debug_msg

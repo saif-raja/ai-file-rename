@@ -7,7 +7,6 @@ import pytest
 from ai_file_rename.models import ProposedRename, SymlinkEntry
 from ai_file_rename.validator import (
     check_existing_collisions,
-    is_well_named,
     resolve_collisions,
     sanitize_and_build_name,
     sanitize_name,
@@ -196,71 +195,6 @@ class TestCheckExistingCollisions:
         being_renamed = {"a.pdf"}
         result = check_existing_collisions(renames, existing, being_renamed)
         assert result[0].proposed_name == "other-2.pdf"
-
-
-class TestIsWellNamed:
-    def test_short_name_not_well_named(self):
-        assert is_well_named("doc.pdf") is False
-
-    def test_default_pattern_img(self):
-        assert is_well_named("IMG_20190412_143022.jpg") is False
-
-    def test_default_pattern_screenshot(self):
-        assert is_well_named("Screenshot 2023-11-15 at 3.42.12 PM.png") is False
-
-    def test_default_pattern_download(self):
-        assert is_well_named("download(3).pdf") is False
-
-    def test_default_pattern_untitled(self):
-        assert is_well_named("Untitled document.docx") is False
-
-    def test_hex_hash_name(self):
-        assert is_well_named("a7f3b2c1d4e5.png") is False
-
-    def test_uuid_name(self):
-        assert is_well_named("550e8400-e29b-41d4-a716-446655440000.pdf") is False
-
-    def test_well_named_descriptive(self):
-        assert is_well_named("quarterly-revenue-report-2023.pdf") is True
-
-    def test_well_named_descriptive_photo(self):
-        assert is_well_named("sunset-over-golden-gate-bridge.jpg") is True
-
-    def test_well_named_meeting_notes(self):
-        assert is_well_named("meeting-notes-project-alpha.txt") is True
-
-    # --- New heuristic tests (ISSUE-02) ---
-
-    def test_version_indicator_v2_not_well_named(self):
-        assert is_well_named("presentation_final_v2_FINAL.pptx") is False
-
-    def test_version_indicator_draft_not_well_named(self):
-        assert is_well_named("architecture-document-draft.md") is False
-
-    def test_repeated_words_not_well_named(self):
-        assert is_well_named("report-final-version-FINAL.pdf") is False
-
-    def test_generic_filler_word_file(self):
-        assert is_well_named("file_with_bad_chars.txt") is False
-
-    def test_generic_filler_word_document(self):
-        assert is_well_named("document-copy-from-server.pdf") is False
-
-    def test_all_caps_tokens_not_well_named(self):
-        assert is_well_named("FINAL-APPROVED-REPORT-BUDGET.xlsx") is False
-
-    def test_still_well_named_with_one_cap(self):
-        """A single ALL_CAPS token (e.g. an acronym) is fine."""
-        assert is_well_named("quarterly-revenue-report-USA.pdf") is True
-
-    def test_well_named_robust_example(self):
-        assert is_well_named("machine-learning-transformer-research.pdf") is True
-
-    def test_version_final_flag_not_well_named(self):
-        assert is_well_named("client-proposal-deck-final.pptx") is False
-
-    def test_temp_indicator_not_well_named(self):
-        assert is_well_named("database-migration-script-temp.sql") is False
 
 
 class TestValidateRenames:

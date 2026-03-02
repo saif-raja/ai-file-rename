@@ -582,75 +582,6 @@ class ProgressiveHolisticStrategy:
         return all_renames, total_tokens
 
 
-def _name_single_file(analyzed: AnalyzedFile, config: Config, logger=None) -> list[ProposedRename]:
-    """Generate a name for a single file from its content analysis alone.
-
-    When a folder has exactly one file, we skip the holistic naming LLM
-    call entirely and derive a name from the content summary. This saves
-    one API call.
-    """
-    import re
-    import unicodedata
-
-    entry = analyzed.enriched.entry
-    summary = analyzed.summary
-    extension = entry.extension
-
-    # Build a candidate name from the primary subject
-    subject = summary.primary_subject
-    # Strip non-ASCII
-    subject = unicodedata.normalize("NFKD", subject).encode("ascii", "ignore").decode()
-    # Lowercase and replace non-alphanum with separator
-    sep = config.separator
-    candidate = re.sub(r"[^a-z0-9]+", sep, subject.lower()).strip(sep)
-    # Enforce word count limits
-    words = candidate.split(sep)
-    words = words[: config.max_words]
-    if len(words) < config.min_words and summary.key_entities:
-        # Pad with key entities if subject is too short
-        for entity in summary.key_entities:
-            clean = re.sub(r"[^a-z0-9]+", sep, entity.lower()).strip(sep)
-            if clean and clean not in words:
-                words.append(clean)
-            if len(words) >= config.min_words:
-                break
-    candidate = sep.join(words)
-
-    if logger:
-        logger.debug(
-            f"  [single-file] subject: {subject[:60]}, "
-            f"words: {words}, candidate: {candidate}"
-        )
-
-    # Ensure the name isn't empty
-    if not candidate:
-        candidate = f"file{sep}{summary.content_type}"
-
-    proposed_name = f"{candidate}.{extension}" if extension else candidate
-
-    # If the proposed name matches the current name, it's unchanged
-    is_unchanged = proposed_name == entry.name
-
-    if logger:
-        tag = "unchanged" if is_unchanged else "named:single"
-        logger.info(
-            f"  [{tag}] {entry.name} -> {proposed_name} "
-            f"(deterministic, no LLM call)"
-        )
-
-    return [
-        ProposedRename(
-            current_name=entry.name,
-            proposed_name=proposed_name,
-            current_path=entry.path,
-            proposed_path=entry.path.parent / proposed_name,
-            reasoning=f"Single-file folder: named from content analysis ({summary.content_type})",
-            confidence=summary.confidence,
-            is_unchanged=is_unchanged,
-        )
-    ]
-
-
 def select_strategy(file_count: int) -> NamingStrategy:
     """Select the appropriate naming strategy based on file count."""
     if file_count <= 50:
@@ -718,9 +649,6 @@ async def name_folder(
         return [], {"input_tokens": 0, "output_tokens": 0}
 
     # All files — including single-file folders — go through the LLM.
-    # The deterministic _name_single_file() path produced sentence-fragment
-    # names (see ISSUE-10). The marginal cost of one extra API call (~$0.001)
-    # is not worth the quality degradation.
     strategy = select_strategy(len(processable))
     return await strategy.generate_names(
         processable, folder_context, client, model, config, logger=logger
@@ -771,7 +699,9 @@ async def name_all(
                 )
                 results[folder_path] = renames
                 all_tokens = _add_token_counts(all_tokens, folder_tokens)
-            except Exception:
+            except Exception as e:
+                if logger:
+                    logger.error(f"Naming failed for {folder_path}: {e}")
                 results[folder_path] = []
 
     tasks = [process(path) for path in analyzed_folders]

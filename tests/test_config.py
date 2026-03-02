@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,68 @@ class TestConfigFromEnv:
         # CLI should win over env
         assert config.model == "gemini-2.5-pro"
         assert config.gemini_api_key == "env-key"
+
+
+# --- ISSUE-19: Malformed YAML config handling ---
+
+
+class TestMalformedYamlConfig:
+    """Tests for ISSUE-19: malformed YAML should warn and use defaults, not crash."""
+
+    def test_malformed_yaml_uses_defaults(self):
+        """Malformed YAML config file falls back to defaults instead of crashing."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("invalid: yaml: content: [broken\n")
+            f.flush()
+            config_path = Path(f.name)
+
+        try:
+            config = load_config(
+                config_path=config_path,
+                cli_overrides={"gemini_api_key": "test"},
+            )
+            # Should get defaults, not crash
+            assert config.model == "gemini-2.5-flash"
+            assert config.separator == "-"
+        finally:
+            os.unlink(config_path)
+
+    def test_malformed_yaml_emits_warning(self):
+        """Malformed YAML config file emits a warning with the file path."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("not: valid: yaml: {{{\n")
+            f.flush()
+            config_path = Path(f.name)
+
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                load_config(
+                    config_path=config_path,
+                    cli_overrides={"gemini_api_key": "test"},
+                )
+                # Should have emitted exactly one warning
+                yaml_warnings = [x for x in w if "Malformed config" in str(x.message)]
+                assert len(yaml_warnings) == 1
+                assert str(config_path) in str(yaml_warnings[0].message)
+        finally:
+            os.unlink(config_path)
+
+    def test_empty_yaml_file_works(self):
+        """An empty YAML file should not crash or warn."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("")
+            f.flush()
+            config_path = Path(f.name)
+
+        try:
+            config = load_config(
+                config_path=config_path,
+                cli_overrides={"gemini_api_key": "test"},
+            )
+            assert config.model == "gemini-2.5-flash"
+        finally:
+            os.unlink(config_path)
 
 
 class TestConfigPrecedence:

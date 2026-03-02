@@ -9,6 +9,7 @@ Resolves configuration from multiple sources with this precedence:
 """
 
 import os
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -43,7 +44,6 @@ class Config(BaseModel):
     # Processing
     concurrency: int = 3
     convert_office_docs: bool = True
-    skip_well_named: bool = True
 
     # Logging
     log_level: str = "INFO"
@@ -80,8 +80,12 @@ def _load_yaml_config(config_path: Path) -> dict:
     except ImportError:
         return {}
 
-    with open(config_path, "r") as f:
-        data = yaml.safe_load(f) or {}
+    try:
+        with open(config_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        warnings.warn(f"Malformed config file {config_path}, using defaults: {e}")
+        return {}
 
     # Flatten nested config structure
     flat = {}

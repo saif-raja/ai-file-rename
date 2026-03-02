@@ -263,6 +263,76 @@ class TestUpdateSymlinks:
         assert str(new_file) in os.readlink(str(link))
 
 
+# --- ISSUE-20: PID-qualified temp symlink path ---
+
+
+class TestSymlinkTempPathPid:
+    """Tests for ISSUE-20: temp symlink paths should be PID-qualified."""
+
+    def test_temp_symlink_contains_pid(self, temp_dir):
+        """update_symlinks_for_rename uses PID-qualified temp path to avoid collisions."""
+        real_file = temp_dir / "old-name.txt"
+        real_file.write_text("real content")
+        new_file = temp_dir / "new-name.txt"
+
+        # Create a symlink
+        link = temp_dir / "link.txt"
+        os.symlink("old-name.txt", str(link))
+
+        # Simulate rename
+        os.rename(str(real_file), str(new_file))
+
+        entries = [
+            SymlinkEntry(
+                symlink_path=link,
+                target_path=real_file,
+                is_relative=True,
+            )
+        ]
+
+        # Patch os.symlink to capture the temp path used
+        original_symlink = os.symlink
+        temp_paths_used = []
+
+        def tracking_symlink(src, dst, *args, **kwargs):
+            if "ai-rename-tmp" in str(dst):
+                temp_paths_used.append(dst)
+            return original_symlink(src, dst, *args, **kwargs)
+
+        with patch("os.symlink", side_effect=tracking_symlink):
+            update_symlinks_for_rename(real_file, new_file, entries)
+
+        # Verify PID was included in temp path
+        pid = str(os.getpid())
+        assert any(pid in str(p) for p in temp_paths_used), (
+            f"Expected PID {pid} in temp symlink paths: {temp_paths_used}"
+        )
+
+    def test_no_stale_temp_symlink_after_update(self, temp_dir):
+        """No .ai-rename-tmp files should remain after successful symlink update."""
+        real_file = temp_dir / "old.txt"
+        real_file.write_text("content")
+        new_file = temp_dir / "new.txt"
+
+        link = temp_dir / "mylink.txt"
+        os.symlink("old.txt", str(link))
+        os.rename(str(real_file), str(new_file))
+
+        entries = [
+            SymlinkEntry(
+                symlink_path=link,
+                target_path=real_file,
+                is_relative=True,
+            )
+        ]
+
+        update_symlinks_for_rename(real_file, new_file, entries)
+
+        # No temp files should remain
+        remaining = list(temp_dir.glob("*.ai-rename-tmp*"))
+        assert len(remaining) == 0, f"Stale temp files remain: {remaining}"
+
+
 class TestLockedFileHandling:
     def test_permission_error_is_locked(self):
         """PermissionError is treated as a locked-file error."""

@@ -98,7 +98,7 @@ def update_symlinks_for_rename(
                 new_target = str(new_path)
 
             # Atomic symlink update
-            temp_link = symlink.with_suffix(".ai-rename-tmp")
+            temp_link = symlink.with_suffix(f".ai-rename-tmp-{os.getpid()}")
             os.symlink(new_target, str(temp_link))
             os.replace(str(temp_link), str(symlink))
 
@@ -283,7 +283,7 @@ def execute_renames(
         for symlink_path, new_target in validated.symlink_updates:
             try:
                 if Path(symlink_path).is_symlink():
-                    temp_link = Path(symlink_path).with_suffix(".ai-rename-tmp")
+                    temp_link = Path(symlink_path).with_suffix(f".ai-rename-tmp-{os.getpid()}")
                     os.symlink(new_target, str(temp_link))
                     os.replace(str(temp_link), str(symlink_path))
                     symlinks_updated += 1

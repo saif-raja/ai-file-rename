@@ -8,68 +8,65 @@
 
 ---
 
-## Critical / High Priority
-
-### ISSUE-13: Gemini File Upload Resource Leak
-
-- **Severity:** HIGH
-- **Location:** `analyzer.py:269-278`
-
-Files uploaded to Gemini File API via `client.files.upload()` are never cleaned up with `client.files.delete()`. Each run accumulates files on Gemini's servers, eventually hitting quota limits.
-
-**Fix:** Add `client.files.delete(name=uploaded.name)` in a `finally` block after `generate_content()`.
-
----
-
-### ISSUE-14: Silent Failure in `name_all()` Exception Handler
-
-- **Severity:** HIGH
-- **Location:** `namer.py:774`
-
-The `except Exception` block in `name_all()` silently swallows errors and sets `results[folder_path] = []`. The user gets no indication that naming failed for an entire folder.
-
-**Fix:** Log the exception at ERROR level: `logger.error(f"Naming failed for {folder_path}: {e}")`.
-
----
-
-### ISSUE-15: Broken Collision Detection in `validate_renames()`
-
-- **Severity:** HIGH
-- **Location:** `validator.py:351`
-
-The `collision_resolved` flag compares `rename.proposed_name` (already sanitized) against `sanitize_and_build_name(original.proposed_name)` — but `rename` IS the sanitized version of `original`, so this comparison is always False. Collision detection is effectively a no-op.
-
-**Fix:** Store the pre-sanitization proposed name and compare against it, or compute collision resolution by checking whether the name was changed by `resolve_collisions()` / `check_existing_collisions()`.
-
----
+## Open — Large Effort (Architectural)
 
 ### ISSUE-16: CLI Reimplements Session API Pipeline (Root Cause of 7 Duplications)
 
 - **Severity:** HIGH (architecture)
-- **Location:** `cli.py` (entire `rename` command)
+- **Location:** `cli.py` (entire `rename` command, ~471 lines within a 1070-line file)
+- **Cascade:** Resolving this would also resolve parts of ISSUE-18 (the `_generate_run_id()` duplicate).
 
-`cli.py` re-implements the full `RenameSession.analyze()` + `RenameSession.execute()` pipeline inline (~400 lines) rather than delegating. This is the root cause of duplicated: run ID generation, Gemini client init, cost estimation (4 copies), history writing, CSV ledger writing. The CLI docstring says "does NOT contain business logic" — but it does.
+`cli.py` re-implements the full `RenameSession.analyze()` + `RenameSession.execute()` pipeline inline rather than delegating. This is the root cause of duplicated: run ID generation, Gemini client init, cost estimation (4 copies), history writing, CSV ledger writing. The CLI docstring says "does NOT contain business logic" — but it does.
 
 **Fix:** Refactor `cli.py` to use `RenameSession` for the pipeline, keeping only CLI-specific concerns (prompts, display, RunReport).
 
----
+#### Verified Reconnaissance (from 2026-03-02 session)
 
-## Medium Priority
+**Current state of cli.py `rename()` — the inline pipeline (lines 680–1010):**
 
-### ISSUE-17: Dead Code Across Codebase
+The `rename()` function directly imports and calls every pipeline stage in sequence:
 
-- **Severity:** MEDIUM
-- **Location:** Multiple files
+| Phase | CLI line | Import | What it does |
+|-------|---------|--------|-------------|
+| Discovery | 680 | `from discovery import discover` | `discover(target, recursive, config)` |
+| Preprocessing | 714 | `from preprocessing import preprocess` | `preprocess(processable_files, tmp_dir, config)` |
+| Context | 751 | `from context import build_context` | `build_context(enriched, target)` |
+| Analysis | 758 | `from analyzer import analyze_all` | `asyncio.run(analyze_all(...))` |
+| Naming | 800 | `from namer import name_all` | `asyncio.run(name_all(...))` |
+| Validation | 864 | `from validator import validate_renames` | `validate_renames(...)` |
+| Execution | 901 | `from executor import execute_renames` | `execute_renames(...)` |
 
-| Dead Code | File | Why It's Dead |
-|-----------|------|---------------|
-| `_name_single_file()` | `namer.py:585-651` | No longer called after LLM-first refactor |
-| `_read_text_content()` | `preprocessing.py:99-110` | Never called by `preprocess()` |
-| `CONVERSION_MAP` | `constants.py:232-246` | Never imported; `preprocessing.py` has its own dispatch |
-| `METADATA_EXTRACTORS_MAP` | `constants.py:514-549` | Never imported; `metadata.py` has its own `EXTRACTORS` |
-| `DEFAULT_PATTERNS` | `constants.py:290-316` | Never imported; `validator.py` has its own inline list |
+This is the **exact same sequence** as `RenameSession.analyze()` (session.py lines 174–339) + `RenameSession.execute()`.
 
-**Fix:** Remove all five. The dead constants in `constants.py` are especially dangerous — they've already drifted out of sync with the actual dispatch tables.
+**`RenameSession` (session.py, 468 lines) already implements the full pipeline:**
+- `analyze()` → returns `RenamePlan` (discovery through validation)
+- `execute(plan)` → returns `ExecutionResult`
+- Has its own `_get_client()`, `_estimate_cost()`, `_record_history()`, `_record_csv_ledger()`
+
+**`cli.py` does NOT import or use `RenameSession` at all.** There is zero reference to it.
+
+**What MUST stay in cli.py (CLI-specific concerns):**
+- `RunReport` class (lines 70–210) — stateful markdown report, rewritten at each phase
+- `_display_impact_summary()` — Rich/plain impact assessment display
+- `_display_dry_run()` — Rich/plain proposed renames table
+- `_interactive_review()` — approve/reject/edit/save menu (lines 343–457)
+- `_edit_individually()` — per-file accept/reject/custom name
+- `_display_execution_result()` — Rich/plain execution summary
+- `_phase_status()` — Rich spinner context manager
+- `click.confirm()` calls — cost check, proceed confirmation
+- Crash recovery / manifest resume prompts (lines 608–670)
+
+**What SHOULD move to Session (or be deleted from CLI):**
+- Gemini client initialization (cli.py lines 762–778 duplicates `session._get_client()`)
+- `_generate_run_id()` (cli.py line 63 duplicates session.py line 40)
+- Cost estimation logic (cli.py lines 924–934 duplicates `session._estimate_cost()`)
+- History + CSV ledger writing (cli.py lines 940–995 duplicates `session._record_history()` + `session._record_csv_ledger()`)
+
+**Booby traps and pitfalls:**
+1. **`RunReport` depends on intermediate state.** The report is updated at each phase transition (`report.update("discovered", ...)`, `report.update("analyzing", ...)`, etc.). If cli.py delegates to `RenameSession.analyze()` which returns a single `RenamePlan`, the CLI loses visibility into intermediate progress. The Session would need to expose phase callbacks or events.
+2. **`asyncio.run()` calls.** The CLI wraps async pipeline stages with `asyncio.run()` (lines 790, 800). The Session also does this internally. If the CLI calls Session, there can't be nested `asyncio.run()` calls — the Session's async internals need to be invoked from within the same event loop, or the Session needs to handle the event loop itself.
+3. **Interactive prompts happen MID-pipeline.** Between discovery and preprocessing, there's a `click.confirm("Proceed with content analysis?")` (line 698). Between validation and execution, there's the full interactive review menu. The Session API would need to expose "checkpoints" where the CLI can interject with user prompts, or the pipeline must be split into analyze → (user review) → execute, which `RenamePlan` already enables.
+4. **The `skipped_well_named` filter was removed in this session.** Both cli.py and session.py previously had filtering logic here. It's now gone from both, simplifying the refactor.
 
 ---
 
@@ -82,68 +79,41 @@ The `collision_resolved` flag compares `rename.proposed_name` (already sanitized
 |----------|-----------|-----------|--------|
 | `_extract_token_counts()` | `analyzer.py:43` | `namer.py:56` | Move to shared utility |
 | `_add_token_counts()` | `analyzer.py:57` | `namer.py:70` | Move to shared utility |
-| `_generate_run_id()` | `cli.py:63` | `session.py:41` | Import from session |
-| `_build_breadcrumb()` | `discovery.py:76` | `context.py:13` | Import from context |
-| `_calculate_depth()` | `discovery.py:90` | `context.py:27` | Import from context |
+| `_generate_run_id()` | `cli.py:63` | `session.py:40` | Import from session (or delete from CLI if ISSUE-16 is resolved first) |
+| `_build_breadcrumb()` | `discovery.py:75` | `context.py:13` | Import from context |
+| `_calculate_depth()` | `discovery.py:89` | `context.py:27` | Import from context |
+
+#### Verified Reconnaissance (from 2026-03-02 session)
+
+**All 5 pairs were verified as byte-for-byte identical implementations.** No drift between copies.
+
+**Recommended consolidation order:**
+
+1. **`_build_breadcrumb` + `_calculate_depth`** (easiest, zero risk): The canonical home is `context.py` since that's the module's purpose. Change `discovery.py` to `from ai_file_rename.context import _build_breadcrumb, _calculate_depth` and delete the local copies. No circular import risk — discovery doesn't import context, and context doesn't import discovery.
+
+2. **`_extract_token_counts` + `_add_token_counts`** (easy, needs new home): Neither analyzer.py nor namer.py is the natural owner. Create a small `utils.py` or add to an existing shared module. Both analyzer.py and namer.py would import from it. No circular import risk.
+
+3. **`_generate_run_id`** (depends on ISSUE-16): If ISSUE-16 is resolved first, cli.py stops needing this function entirely (Session generates the run ID). If ISSUE-16 is NOT resolved, cli.py should import from session.py. No circular import risk — cli.py already doesn't import session.py, and session.py doesn't import cli.py.
+
+**Booby traps and pitfalls:**
+1. **Test imports may reference the old locations.** After moving functions, grep ALL test files for imports of the moved functions from their old locations. Tests import `_extract_token_counts` from both `analyzer` and `namer` in some test files.
+2. **The functions are module-private (leading underscore).** Moving them to a shared module means making them importable — consider dropping the underscore or keeping it with explicit `__all__` exports.
+3. **Line numbers in this doc are approximate.** The codebase has been modified during this session (dead code removal, is_well_named removal, bug fixes). Always verify current line numbers before editing.
 
 ---
 
-### ISSUE-19: Config Loading Silently Ignores Malformed YAML
+## Session Context for Future Agent
 
-- **Severity:** MEDIUM
-- **Location:** `config.py:73-96`
+**Test suite status:** 328 tests passing, 0 failures (as of end of session).
 
-If `~/.ai-rename.yaml` exists but is malformed, the error is silently swallowed and defaults are used. The user has no way to know their config was ignored.
+**Changes made this session (uncommitted):**
+- Fixed ISSUE-13 (Gemini upload cleanup), ISSUE-14 (error logging), ISSUE-17 (dead code), ISSUE-19 (YAML crash), ISSUE-20 (symlink race)
+- Removed `is_well_named()` heuristic entirely (ISSUE-12 closed)
+- Closed ISSUE-15, ISSUE-21, ISSUE-22, ISSUE-23 as invalid or resolved
+- Added 13 new tests, removed 47 dead tests
+- Net diff: +484 / -777 lines across 25 files
 
-**Fix:** Catch `yaml.YAMLError` and emit a warning.
-
----
-
-### ISSUE-20: Symlink Atomic Update Race Condition
-
-- **Severity:** MEDIUM
-- **Location:** `executor.py:100-103`
-
-The temp symlink path `.ai-rename-tmp` can collide if a previous run crashed or two instances run concurrently, causing `FileExistsError`.
-
-**Fix:** Use PID-qualified temp name: `symlink.with_suffix(f".ai-rename-tmp-{os.getpid()}")` and clean up in a `finally` block.
-
----
-
-## Low Priority
-
-### ISSUE-12: `file with lots of spaces.txt` Classified as Well-Named
-
-- **Severity:** LOW
-- **Location:** `validator.py`
-
-The `is_well_named()` heuristic doesn't detect excessive whitespace as a quality signal. LOW priority because the LLM-first naming approach handles these files regardless.
-
----
-
-### ISSUE-21: Path Traversal via Symlinks Outside Target Directory
-
-- **Severity:** LOW (requires elevated privileges to be exploitable)
-- **Location:** `discovery.py:191-194`
-
-No validation that discovered files (via symlinks) stay within the target directory boundary. A symlink to `../../etc/passwd` would be followed.
-
-**Fix:** Resolve each path and check `resolved.relative_to(target_dir)`.
-
----
-
-### ISSUE-22: Metadata Extraction Timeout Ineffective on Windows
-
-- **Severity:** LOW
-- **Location:** `metadata.py:74-111`
-
-`_with_timeout()` uses `threading.Thread` on Windows, but Python threads cannot be forcibly killed. A corrupt file causing an extractor to hang will block indefinitely.
-
----
-
-### ISSUE-23: Default Name Pattern Lists Have Diverged
-
-- **Severity:** LOW
-- **Location:** `constants.py:290` vs `validator.py:411`
-
-`constants.py` `DEFAULT_PATTERNS` and `validator.py`'s inline list have patterns the other doesn't. `constants.py` version is dead code (never imported). If consolidated, the union of both lists would provide better coverage.
+**Approach recommendation for ISSUE-16 + ISSUE-18:**
+- Tackle ISSUE-18 pairs 1 and 2 first (breadcrumb/depth and token helpers) — these are independent of ISSUE-16 and reduce noise before the big refactor
+- Then tackle ISSUE-16 (CLI refactor) which will naturally resolve pair 3 (`_generate_run_id`)
+- Use planning mode before starting ISSUE-16 — the interactive prompt checkpoints and RunReport phase updates are the hardest design decisions

@@ -260,6 +260,7 @@ async def _analyze_single_file(
     prompt = _build_analysis_prompt(enriched, folder_context)
 
     contents = [prompt]
+    uploaded_file_name = None  # Track for cleanup
 
     # For text files, include content inline
     if enriched.entry.category == FileCategory.TEXT_EXTRACTABLE:
@@ -269,6 +270,7 @@ async def _analyze_single_file(
     elif enriched.processed_path and enriched.processed_path.exists():
         # Upload the file (or its converted version)
         uploaded = client.files.upload(file=enriched.processed_path)
+        uploaded_file_name = uploaded.name
 
         # Wait for processing if needed
         while hasattr(uploaded, "state") and uploaded.state == "PROCESSING":
@@ -344,6 +346,13 @@ async def _analyze_single_file(
             logger.warning(
                 f"  [FAILED] {enriched.entry.name} — {str(e)[:100]}"
             )
+    finally:
+        if uploaded_file_name:
+            try:
+                client.files.delete(name=uploaded_file_name)
+            except Exception as cleanup_err:
+                if logger:
+                    logger.debug(f"Failed to clean up uploaded file {uploaded_file_name}: {cleanup_err}")
 
     return AnalyzedFile(enriched=enriched, summary=summary), token_counts
 
