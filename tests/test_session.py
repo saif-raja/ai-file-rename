@@ -107,6 +107,53 @@ class TestRenameSessionAnalyze:
             # Expected — no valid API key
             pass
 
+    def test_analyze_skips_files_with_skip_reason(self, temp_dir):
+        """Files with skip_reason are excluded even if their category is supported."""
+        from ai_file_rename.models import (
+            DiscoveryResult, FileCategory, FileEntry, ImpactSummary,
+        )
+
+        # Create a FileEntry with a SUPPORTED category but with a skip_reason
+        skipped_file = FileEntry(
+            path=temp_dir / "oversized.pdf",
+            name="oversized.pdf",
+            stem="oversized",
+            extension="pdf",
+            size_bytes=3_000_000_000,
+            category=FileCategory.DIRECTLY_PROCESSABLE,
+            parent_folder=temp_dir,
+            skip_reason="File exceeds 2 GB limit",
+        )
+
+        discovery = DiscoveryResult(
+            files=[skipped_file],
+            folders=[],
+            symlink_map={},
+            impact=ImpactSummary(
+                target_directory=temp_dir,
+                recursive=False,
+                total_files=1,
+                supported_files=0,  # skip_reason means not processable
+                unsupported_files=1,
+                symlinks_found=0,
+                symlink_targets_in_scope=0,
+                folders_affected=1,
+                deepest_nesting=0,
+                estimated_api_calls=0,
+                estimated_cost_usd=0.0,
+                file_type_breakdown={"pdf": 1},
+                warnings=[],
+            ),
+        )
+
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        plan = session.analyze(discovery=discovery)
+
+        # The file should be excluded despite having a supported category
+        assert len(plan.validated_renames) == 0
+        assert plan.analysis_failures == []
+
+
 class TestRenameSessionExecute:
     def test_execute_no_plan_raises(self, temp_dir):
         session = RenameSession(target_dir=temp_dir, api_key="test-key")
@@ -153,6 +200,106 @@ class TestRenameSessionUndo:
         session = RenameSession(target_dir=temp_dir, api_key="test-key")
         with pytest.raises(FileNotFoundError):
             session.undo()
+
+
+class TestRenameSessionDiscover:
+    def test_discover_returns_discovery_result(self, temp_dir):
+        (temp_dir / "test.txt").write_text("hello")
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        result = session.discover()
+        from ai_file_rename.models import DiscoveryResult
+        assert isinstance(result, DiscoveryResult)
+        assert result.impact.total_files >= 1
+
+    def test_discover_empty_dir(self, temp_dir):
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        result = session.discover()
+        assert result.impact.total_files == 0
+
+    def test_discover_nonexistent_dir_raises(self, temp_dir):
+        import shutil
+        target = temp_dir / "does-not-exist"
+        session = RenameSession(target_dir=target, api_key="test-key")
+        with pytest.raises(FileNotFoundError):
+            session.discover()
+
+    def test_analyze_accepts_precomputed_discovery(self, temp_dir):
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        discovery = session.discover()
+        # analyze() with pre-computed discovery should not re-discover
+        plan = session.analyze(discovery=discovery)
+        assert isinstance(plan, RenamePlan)
+
+
+class TestOnPhaseCallback:
+    def test_on_phase_not_called_for_empty_dir(self, temp_dir):
+        """No phases fire when directory is empty (early return)."""
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        phases = []
+        plan = session.analyze(on_phase=lambda phase, **kw: phases.append(phase))
+        assert phases == []
+        assert plan.total_renames == 0
+
+    def test_on_phase_called_with_preprocessing_first(self, temp_dir):
+        """When files exist, preprocessing is the first phase callback."""
+        (temp_dir / "test.txt").write_text("hello world")
+        session = RenameSession(target_dir=temp_dir, api_key="fake-key")
+
+        phases = []
+        def recorder(phase, **kwargs):
+            phases.append((phase, kwargs))
+
+        # analyze() will fail at the Gemini call, but preprocessing and
+        # context phases should fire before that
+        try:
+            session.analyze(on_phase=recorder)
+        except Exception:
+            pass
+
+        assert len(phases) >= 1
+        assert phases[0][0] == "preprocessing"
+        assert "file_count" in phases[0][1]
+        assert phases[0][1]["file_count"] >= 1
+
+    def test_on_phase_context_after_preprocessing(self, temp_dir):
+        """Context phase fires after preprocessing."""
+        (temp_dir / "test.txt").write_text("hello world")
+        session = RenameSession(target_dir=temp_dir, api_key="fake-key")
+
+        phases = []
+        try:
+            session.analyze(on_phase=lambda p, **kw: phases.append(p))
+        except Exception:
+            pass
+
+        assert len(phases) >= 2
+        assert phases[0] == "preprocessing"
+        assert phases[1] == "context"
+
+    def test_on_phase_none_is_default(self, temp_dir):
+        """analyze() works without on_phase (backward compatible)."""
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        plan = session.analyze()  # no on_phase
+        assert isinstance(plan, RenamePlan)
+
+    def test_on_phase_exception_propagates(self, temp_dir):
+        """If on_phase raises during a phase, the exception propagates."""
+        (temp_dir / "test.txt").write_text("hello world")
+        session = RenameSession(target_dir=temp_dir, api_key="fake-key")
+
+        def bad_callback(phase, **kwargs):
+            raise ValueError("callback error")
+
+        # With files present, preprocessing phase fires and triggers the error
+        with pytest.raises(ValueError, match="callback error"):
+            session.analyze(on_phase=bad_callback)
+
+    def test_analysis_failures_in_plan(self, temp_dir):
+        """RenamePlan has analysis_failures field."""
+        session = RenameSession(target_dir=temp_dir, api_key="test-key")
+        plan = session.analyze()
+        assert hasattr(plan, "analysis_failures")
+        assert isinstance(plan.analysis_failures, list)
 
 
 class TestRenamePlan:

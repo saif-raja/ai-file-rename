@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from ai_file_rename.config import Config, load_config
 from ai_file_rename.logger import RenameLogger
@@ -37,7 +38,7 @@ from ai_file_rename.models import (
 )
 
 
-def _generate_run_id() -> str:
+def generate_run_id() -> str:
     """Generate a unique run ID: {date}-{short-uuid}."""
     date_part = datetime.now().strftime("%Y%m%d")
     uuid_part = uuid.uuid4().hex[:8]
@@ -80,6 +81,7 @@ class RenamePlan:
     run_id: str = ""
     target_directory: Path = Path(".")
     recursive: bool = False
+    analysis_failures: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def total_renames(self) -> int:
@@ -146,7 +148,7 @@ class RenameSession:
         cfg_path = Path(config_path) if config_path else None
         self.config = load_config(config_path=cfg_path, cli_overrides=overrides)
 
-        self.run_id = _generate_run_id()
+        self.run_id = generate_run_id()
         self.logger = RenameLogger(
             self.config.log_dir, self.run_id, verbose=verbose
         )
@@ -158,7 +160,13 @@ class RenameSession:
     def _get_client(self):
         """Lazily initialize the Gemini client."""
         if self._client is None:
-            from google import genai
+            try:
+                from google import genai
+            except ImportError:
+                raise RuntimeError(
+                    "google-genai package not installed. "
+                    "Run: pip install google-genai"
+                )
             if self.config.use_vertex_ai:
                 self._client = genai.Client(
                     vertexai=True,
@@ -169,8 +177,38 @@ class RenameSession:
                 self._client = genai.Client(api_key=self.config.gemini_api_key)
         return self._client
 
-    def analyze(self) -> RenamePlan:
-        """Run the full analysis pipeline: discover, preprocess, analyze, name, validate.
+    def discover(self) -> DiscoveryResult:
+        """Run the discovery phase only.
+
+        Returns:
+            DiscoveryResult with files, folders, symlink map, and impact summary.
+
+        Raises:
+            FileNotFoundError: If target directory doesn't exist.
+            NotADirectoryError: If target is not a directory.
+            PermissionError: If target is not readable.
+        """
+        from ai_file_rename.discovery import discover
+
+        self.logger.info(f"Starting discovery for session {self.run_id}")
+        self.logger.info(f"Target: {self.target_dir}")
+        return discover(self.target_dir, self.recursive, self.config)
+
+    def analyze(
+        self,
+        discovery: Optional[DiscoveryResult] = None,
+        on_phase: Optional[Callable[..., None]] = None,
+    ) -> RenamePlan:
+        """Run the analysis pipeline: preprocess, analyze, name, validate.
+
+        If no discovery result is provided, runs discovery first.
+
+        Args:
+            discovery: Optional pre-computed DiscoveryResult (e.g. from discover()).
+            on_phase: Optional callback fired at the start of each pipeline phase.
+                Called as on_phase(phase_name, **kwargs) where phase_name is one of:
+                "preprocessing", "context", "analyzing", "naming", "validating".
+                kwargs may include file_count, rename_count, elapsed, etc.
 
         Returns:
             A RenamePlan containing all proposed renames ready for review/execution.
@@ -178,34 +216,41 @@ class RenameSession:
         Raises:
             FileNotFoundError: If target directory doesn't exist.
             ValueError: If no API key is configured.
+            RuntimeError: If google-genai package is not installed.
         """
-        if not self.config.gemini_api_key:
+        if not self.config.gemini_api_key and not self.config.use_vertex_ai:
             raise ValueError(
                 "No API key found. Set GEMINI_API_KEY environment variable "
                 "or pass api_key to RenameSession."
             )
 
-        self.logger.info(f"Starting analysis session {self.run_id}")
-        self.logger.info(f"Target: {self.target_dir}")
+        def _notify(phase: str, **kwargs):
+            if on_phase is not None:
+                on_phase(phase, **kwargs)
 
-        # Phase 1: Discovery
-        from ai_file_rename.discovery import discover
+        # Phase 1: Discovery (skip if caller already ran it)
+        if discovery is None:
+            discovery = self.discover()
 
-        discovery = discover(self.target_dir, self.recursive, self.config)
-
-        if discovery.impact.supported_files == 0:
-            self.logger.info("No supported files found.")
+        def _empty_plan(**extra) -> RenamePlan:
             plan = RenamePlan(
                 discovery=discovery,
                 validated_renames=[],
                 run_id=self.run_id,
                 target_directory=self.target_dir,
                 recursive=self.recursive,
+                **extra,
             )
             self._last_plan = plan
             return plan
 
-        # Filter unsupported files
+        if discovery.impact.supported_files == 0:
+            self.logger.info("No supported files found.")
+            return _empty_plan()
+
+        # Filter unsupported files and files with skip reasons (e.g. oversized).
+        # Note: this correctly excludes files flagged during discovery (skip_reason)
+        # even if their category is technically supported.
         processable_files = [
             f for f in discovery.files
             if f.category != FileCategory.UNSUPPORTED and not f.skip_reason
@@ -213,20 +258,14 @@ class RenameSession:
 
         if not processable_files:
             self.logger.info("No processable files found.")
-            plan = RenamePlan(
-                discovery=discovery,
-                validated_renames=[],
-                run_id=self.run_id,
-                target_directory=self.target_dir,
-                recursive=self.recursive,
-            )
-            self._last_plan = plan
-            return plan
+            return _empty_plan()
 
         token_usage = TokenUsage()
 
         # Phase 2: Preprocessing
         from ai_file_rename.preprocessing import preprocess
+
+        _notify("preprocessing", file_count=len(processable_files))
 
         with tempfile.TemporaryDirectory(prefix="ai-rename-") as tmp:
             tmp_dir = Path(tmp)
@@ -236,6 +275,7 @@ class RenameSession:
             # Phase 3: Context building
             from ai_file_rename.context import build_context
 
+            _notify("context")
             self.logger.info("Building folder context...")
             folder_contexts = build_context(enriched, self.target_dir)
 
@@ -243,8 +283,10 @@ class RenameSession:
             from ai_file_rename.analyzer import analyze_all
 
             client = self._get_client()
+            _notify("analyzing")
             self.logger.info("Analyzing file contents with Gemini...")
 
+            t_start = time.monotonic()
             analyzed, analysis_tokens = asyncio.run(
                 analyze_all(
                     folder_contexts,
@@ -254,12 +296,33 @@ class RenameSession:
                     concurrency=self.config.concurrency,
                 )
             )
+            t_analysis = time.monotonic() - t_start
             token_usage.merge(analysis_tokens)
+            analyzed_count = sum(len(v) for v in analyzed.values())
+            self.logger.info(
+                f"Phase: Content Analysis — {analyzed_count} files "
+                f"in {t_analysis:.1f}s"
+            )
+
+            # Collect analysis failures (files excluded from naming)
+            analysis_failures = []
+            for folder_path, analyzed_files in analyzed.items():
+                for af in analyzed_files:
+                    ct = af.summary.content_type
+                    if ct in ("error", "unknown", "skipped") or af.summary.confidence < 0.1:
+                        reason = af.summary.primary_subject[:80]
+                        analysis_failures.append((af.enriched.entry.name, reason))
+                        self.logger.warning(
+                            f"Analysis failed for {af.enriched.entry.name}: {reason}"
+                        )
 
             # Phase 5: Holistic naming
             from ai_file_rename.namer import name_all
 
+            _notify("naming")
             self.logger.info("Generating holistic names...")
+
+            t_start = time.monotonic()
             proposed, naming_tokens = asyncio.run(
                 name_all(
                     analyzed,
@@ -270,7 +333,13 @@ class RenameSession:
                     concurrency=self.config.concurrency,
                 )
             )
+            t_naming = time.monotonic() - t_start
             token_usage.merge(naming_tokens)
+            naming_count = sum(len(v) for v in proposed.values())
+            self.logger.info(
+                f"Phase: Holistic Naming — {naming_count} names "
+                f"across {len(proposed)} folders in {t_naming:.1f}s"
+            )
 
         # Flatten all proposed renames
         all_renames = []
@@ -279,20 +348,12 @@ class RenameSession:
 
         if not all_renames:
             self.logger.info("No renames proposed.")
-            plan = RenamePlan(
-                discovery=discovery,
-                validated_renames=[],
-                token_usage=token_usage,
-                run_id=self.run_id,
-                target_directory=self.target_dir,
-                recursive=self.recursive,
-            )
-            self._last_plan = plan
-            return plan
+            return _empty_plan(token_usage=token_usage, analysis_failures=analysis_failures)
 
         # Phase 6: Validation
         from ai_file_rename.validator import validate_renames
 
+        _notify("validating", rename_count=len(all_renames))
         self.logger.info(f"Validating {len(all_renames)} proposed renames...")
         existing_files = {f.name for f in discovery.files}
         files_being_renamed = {r.current_name for r in all_renames}
@@ -304,6 +365,11 @@ class RenameSession:
             files_being_renamed=files_being_renamed,
         )
 
+        self.logger.info(
+            f"Token usage — input: {token_usage.input_tokens:,}, "
+            f"output: {token_usage.output_tokens:,}"
+        )
+
         plan = RenamePlan(
             discovery=discovery,
             validated_renames=validated,
@@ -311,6 +377,7 @@ class RenameSession:
             run_id=self.run_id,
             target_directory=self.target_dir,
             recursive=self.recursive,
+            analysis_failures=analysis_failures,
         )
         self._last_plan = plan
 

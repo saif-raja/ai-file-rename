@@ -1,24 +1,21 @@
 """
 CLI entrypoint for ai-file-rename.
 
-Wires together the pipeline stages and manages interactive prompts.
-The CLI calls pipeline functions in sequence but does NOT contain business logic.
+Thin wrapper over RenameSession — handles interactive prompts, Rich display,
+and run reports. Does NOT contain business logic.
 """
 
-import asyncio
 import contextlib
 import sys
-import tempfile
-import time
-import uuid
 from datetime import datetime
 from pathlib import Path
 
 import click
 
 from ai_file_rename import __version__
-from ai_file_rename.config import Config, load_config
+from ai_file_rename.config import load_config
 from ai_file_rename.logger import RenameLogger
+from ai_file_rename.session import RenameSession, generate_run_id
 
 
 # ---------------------------------------------------------------------------
@@ -58,13 +55,6 @@ def _phase_status(console, message: str):
     print(f"[PHASE] {message} ...")
     yield
     print(f"[DONE]  {message}")
-
-
-def _generate_run_id() -> str:
-    """Generate a unique run ID: {date}-{short-uuid}."""
-    date_part = datetime.now().strftime("%Y%m%d")
-    uuid_part = uuid.uuid4().hex[:8]
-    return f"{date_part}-{uuid_part}"
 
 
 class RunReport:
@@ -550,33 +540,45 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
            max_files, custom_instructions, verbose, cost_limit,
            dry_run, include, exclude, skip_converted, log_level, plain):
     """Rename files using AI-powered content analysis."""
-    # Build CLI overrides
-    overrides = {}
-    if model is not None:
-        overrides["model"] = model
-    if max_files is not None:
-        overrides["max_files"] = max_files
-    if custom_instructions is not None:
-        overrides["custom_instructions"] = custom_instructions
-    if cost_limit is not None:
-        overrides["cost_limit"] = cost_limit
-    if headless:
-        overrides["require_confirmation"] = False
-    if include is not None:
-        overrides["include_patterns"] = [include]
-    if exclude is not None:
-        overrides["exclude_patterns"] = [exclude]
-    if skip_converted:
-        overrides["convert_office_docs"] = False
-    if log_level is not None:
-        overrides["log_level"] = log_level.upper()
     # --dry-run explicitly disables execute mode
     if dry_run:
         execute = False
 
-    # Load config
-    cfg_path = Path(config_path) if config_path else None
-    config = load_config(config_path=cfg_path, cli_overrides=overrides)
+    # --plain or --headless both disable Rich rendering
+    use_rich = not plain and not headless
+    console = _get_console(plain=not use_rich)
+
+    # Build config overrides for non-named Session params
+    config_overrides = {}
+    if cost_limit is not None:
+        config_overrides["cost_limit"] = cost_limit
+    if headless:
+        config_overrides["require_confirmation"] = False
+    if include is not None:
+        config_overrides["include_patterns"] = [include]
+    if exclude is not None:
+        config_overrides["exclude_patterns"] = [exclude]
+    if skip_converted:
+        config_overrides["convert_office_docs"] = False
+    if log_level is not None:
+        config_overrides["log_level"] = log_level.upper()
+
+    # Create RenameSession — handles config, client, run ID, logger
+    session = RenameSession(
+        target_dir=target_directory,
+        recursive=recursive,
+        config_path=config_path,
+        model=model,
+        max_files=max_files,
+        custom_instructions=custom_instructions,
+        verbose=verbose,
+        **config_overrides,
+    )
+
+    config = session.config
+    target = session.target_dir
+    run_id = session.run_id
+    logger = session.logger
 
     if not config.gemini_api_key and not config.use_vertex_ai:
         click.echo(
@@ -585,10 +587,6 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             err=True,
         )
         sys.exit(1)
-
-    run_id = _generate_run_id()
-    logger = RenameLogger(config.log_dir, run_id, verbose=verbose)
-    target = Path(target_directory).resolve()
 
     # Create the stateful run report — rewritten at each phase transition
     report = RunReport(target, run_id, config)
@@ -641,12 +639,12 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                         confidence=1.0,
                         is_unchanged=False,
                     )
-                    validated = ValidatedRename(
+                    validated_entry = ValidatedRename(
                         original=proposed,
                         final_name=entry["new_name"],
                         validation_notes=["Resumed from manifest"],
                     )
-                    resumed_renames.append(validated)
+                    resumed_renames.append(validated_entry)
 
                 click.echo(f"Resuming {len(resumed_renames)} pending renames...")
                 logger.info(
@@ -665,6 +663,63 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                     config=config,
                 )
                 _display_execution_result(result, use_rich=use_rich)
+
+                # Record resumed session in history and CSV ledger.
+                # Schema matches Session._record_history() / _record_csv_ledger()
+                # with zero tokens/cost (no API calls for resume).
+                # Note: recursive is unknown from manifest data — defaults to False.
+                logger.append_to_history({
+                    "run_id": run_id,
+                    "run_started_at": result.started_at.isoformat(),
+                    "run_completed_at": (
+                        result.completed_at.isoformat()
+                        if result.completed_at else None
+                    ),
+                    "target_directory": str(target),
+                    "recursive": False,
+                    "model_used": config.model,
+                    "files_discovered": 0,
+                    "folders_touched": 0,
+                    "files_renamed": result.renamed,
+                    "files_skipped": result.skipped,
+                    "files_failed": result.failed,
+                    "symlinks_updated": result.symlinks_updated,
+                    "total_tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "resumed_from": existing.run_id,
+                    "renames": [
+                        {"old": r.old_path.name, "new": r.new_path.name}
+                        for r in result.results
+                        if r.status == "completed"
+                    ],
+                })
+
+                duration = 0.0
+                if result.completed_at and result.started_at:
+                    duration = (
+                        result.completed_at - result.started_at
+                    ).total_seconds()
+                logger.append_to_csv_ledger({
+                    "timestamp": (
+                        result.completed_at or result.started_at
+                    ).isoformat(),
+                    "run_id": run_id,
+                    "target_directory": str(target),
+                    "recursive": "False",
+                    "total_files_discovered": 0,
+                    "total_folders_touched": 0,
+                    "files_renamed": result.renamed,
+                    "files_skipped": result.skipped,
+                    "files_failed": result.failed,
+                    "symlinks_updated": result.symlinks_updated,
+                    "model_used": config.model,
+                    "estimated_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "duration_seconds": round(duration, 1),
+                })
+
                 logger.info(f"Resume session {run_id} complete.")
                 return
             elif choice == "discard":
@@ -672,16 +727,10 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         else:
             existing.cleanup()
 
-    # --plain or --headless both disable Rich rendering
-    use_rich = not plain and not headless
-    console = _get_console(plain=not use_rich)
-
-    # Phase 1: Discovery
-    from ai_file_rename.discovery import discover
-
+    # Phase 1: Discovery (via Session)
     try:
         with _phase_status(console, "Discovering files"):
-            discovery = discover(target, recursive, config)
+            discovery = session.discover()
     except (FileNotFoundError, NotADirectoryError, PermissionError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -710,175 +759,130 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                 click.echo("Aborted.")
                 return
 
-    # Phase 2: Preprocessing
-    from ai_file_rename.preprocessing import preprocess
-    with tempfile.TemporaryDirectory(prefix="ai-rename-") as tmp:
-        tmp_dir = Path(tmp)
+    # Phases 2–6: Preprocess, analyze, name, validate (via Session)
+    report.update("analyzing", analyzed_count=discovery.impact.supported_files)
 
-        processable_files = [
-            f for f in discovery.files
-            if f.category.value != "unsupported"
-        ]
+    # Phase progress callback — drives Rich spinner + plain text output
+    _phase_messages = {
+        "preprocessing": "Preprocessing {file_count} files",
+        "context": "Building folder context",
+        "analyzing": "Analyzing file contents with Gemini",
+        "naming": "Generating holistic names",
+        "validating": "Validating {rename_count} proposed renames",
+    }
 
-        report.update(
-            "analyzing",
-            analyzed_count=len(processable_files),
-        )
+    def _print_done(msg):
+        """Print a phase-completion line (checkmark or plain text)."""
+        if console is not None:
+            try:
+                console.print(f"[green]\u2713[/green] {msg}")
+                return
+            except Exception:
+                pass
+        print(f"[DONE]  {msg}")
 
-        logger.info(f"Preprocessing {len(processable_files)} files...")
-        with _phase_status(console, f"Preprocessing {len(processable_files)} files"):
-            enriched = preprocess(processable_files, tmp_dir, config)
+    def _print_start(msg):
+        """Print a phase-start line (plain text, used when no spinner)."""
+        if console is not None:
+            try:
+                console.print(f"[bold cyan]\u22ef[/bold cyan] {msg}...")
+                return
+            except Exception:
+                pass
+        print(f"[PHASE] {msg} ...")
 
-        # Phase 3: Context building
-        from ai_file_rename.context import build_context
+    prev_phase = None
+    status_obj = None
 
-        logger.info("Building folder context...")
-        with _phase_status(console, "Building folder context"):
-            folder_contexts = build_context(enriched, target)
-
-        # Phase 4: Content analysis
-        from ai_file_rename.analyzer import analyze_all
-
-        logger.info("Analyzing file contents with Gemini...")
-
+    def _on_phase(phase, **kwargs):
+        nonlocal prev_phase
+        msg = _phase_messages.get(phase, phase)
         try:
-            from google import genai
-            if config.use_vertex_ai:
-                client = genai.Client(
-                    vertexai=True,
-                    project=config.vertex_project,
-                    location=config.vertex_location,
+            msg = msg.format(**kwargs)
+        except KeyError:
+            pass
+
+        # Complete previous phase
+        if prev_phase is not None:
+            _print_done(prev_phase)
+
+        # Start new phase — update spinner if available, else print static line
+        if status_obj is not None:
+            try:
+                status_obj.update(f"[bold cyan]{msg}...[/bold cyan]")
+            except Exception:
+                _print_start(msg)
+        else:
+            _print_start(msg)
+
+        prev_phase = msg
+
+    try:
+        # Start animated spinner (Rich) or nothing (plain text)
+        if console is not None:
+            try:
+                status_obj = console.status(
+                    "[bold cyan]Initializing...[/bold cyan]", spinner="dots"
                 )
-            else:
-                client = genai.Client(api_key=config.gemini_api_key)
-        except ImportError:
-            click.echo(
-                "Error: google-genai package not installed. "
-                "Run: pip install google-genai",
-                err=True,
-            )
-            sys.exit(1)
+                status_obj.start()
+            except Exception:
+                status_obj = None
 
-        t_analysis_start = time.monotonic()
-        with _phase_status(console, "Analyzing file contents with Gemini"):
-            analyzed, analyze_tokens = asyncio.run(
-                analyze_all(
-                    folder_contexts,
-                    client,
-                    config.model,
-                    config,
-                    concurrency=config.concurrency,
-                    logger=logger,
-                )
-            )
-        t_analysis_elapsed = time.monotonic() - t_analysis_start
-        analyzed_count = sum(len(v) for v in analyzed.values())
-        logger.info(
-            f"Phase: Content Analysis — {analyzed_count} files "
-            f"in {t_analysis_elapsed:.1f}s"
-        )
+        plan = session.analyze(discovery=discovery, on_phase=_on_phase)
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    finally:
+        if status_obj is not None:
+            try:
+                status_obj.stop()
+            except Exception:
+                pass
 
-        # Phase 5: Holistic naming
-        from ai_file_rename.namer import name_all
+    # Complete the last phase
+    if prev_phase is not None:
+        _print_done(prev_phase)
 
-        logger.info("Generating holistic names...")
-        t_naming_start = time.monotonic()
-        with _phase_status(console, "Generating holistic names"):
-            proposed, naming_tokens = asyncio.run(
-                name_all(
-                    analyzed,
-                    folder_contexts,
-                    client,
-                    config.model,
-                    config,
-                    concurrency=config.concurrency,
-                    logger=logger,
-                )
-            )
-        t_naming_elapsed = time.monotonic() - t_naming_start
-        naming_count = sum(len(v) for v in proposed.values())
-        logger.info(
-            f"Phase: Holistic Naming — {naming_count} names "
-            f"across {len(proposed)} folders in {t_naming_elapsed:.1f}s"
-        )
-
-        total_tokens = {
-            "input_tokens": analyze_tokens["input_tokens"] + naming_tokens["input_tokens"],
-            "output_tokens": analyze_tokens["output_tokens"] + naming_tokens["output_tokens"],
-        }
-        logger.info(
-            f"Token usage — input: {total_tokens['input_tokens']:,}, "
-            f"output: {total_tokens['output_tokens']:,}"
-        )
-
-    # Report files that failed analysis (ISSUE-01: these are excluded from
-    # naming to prevent error messages from leaking into filenames)
-    skipped_analysis_failed = []
-    for folder_path, analyzed_files in analyzed.items():
-        for af in analyzed_files:
-            ct = af.summary.content_type
-            if ct in ("error", "unknown", "skipped") or af.summary.confidence < 0.1:
-                reason = af.summary.primary_subject[:80]
-                skipped_analysis_failed.append((af.enriched.entry.name, reason))
-                logger.warning(
-                    f"Analysis failed for {af.enriched.entry.name}: {reason}"
-                )
-
-    if skipped_analysis_failed:
+    # Display analysis failures from plan
+    if plan.analysis_failures:
         if use_rich:
             try:
                 from rich.console import Console as _C
                 _c = _C()
                 _c.print(
                     f"\n[yellow]Analysis failed for "
-                    f"{len(skipped_analysis_failed)} file(s) "
+                    f"{len(plan.analysis_failures)} file(s) "
                     f"(excluded from renaming):[/yellow]"
                 )
-                for name, reason in skipped_analysis_failed:
+                for name, reason in plan.analysis_failures:
                     _c.print(f"[yellow]  - {name}: {reason}[/yellow]")
             except ImportError:
                 pass
         else:
             print(
-                f"\n[ANALYSIS FAILURES] count={len(skipped_analysis_failed)}"
+                f"\n[ANALYSIS FAILURES] count={len(plan.analysis_failures)}"
             )
-            for name, reason in skipped_analysis_failed:
+            for name, reason in plan.analysis_failures:
                 print(f"  [skipped] {name}: {reason}")
 
-    # Flatten all proposed renames
-    all_renames = []
-    for folder_path, renames_list in proposed.items():
-        all_renames.extend(renames_list)
-
-    if not all_renames:
+    if not plan.validated_renames:
         click.echo("No renames proposed. All files appear to be well-named.")
         return
 
-    # Phase 6: Validation
-    from ai_file_rename.validator import validate_renames
-
-    logger.info(f"Validating {len(all_renames)} proposed renames...")
-    existing_files = {f.name for f in discovery.files}
-    files_being_renamed = {r.current_name for r in all_renames}
-
-    with _phase_status(console, f"Validating {len(all_renames)} proposed renames"):
-        validated = validate_renames(
-            all_renames,
-            symlink_map=discovery.symlink_map,
-            existing_files=existing_files,
-            files_being_renamed=files_being_renamed,
-        )
-
-    # Update report with proposed renames
-    _analysis_failed = skipped_analysis_failed if 'skipped_analysis_failed' in dir() else []
+    # Update report with plan data
+    total_tokens = {
+        "input_tokens": plan.token_usage.input_tokens,
+        "output_tokens": plan.token_usage.output_tokens,
+    }
     report.update(
         "proposed",
-        validated=validated,
+        validated=plan.validated_renames,
         total_tokens=total_tokens,
-        analysis_failures=_analysis_failed,
+        analysis_failures=plan.analysis_failures,
     )
 
-    # Phase 7: Dry-run display
+    # Dry-run display
+    validated = plan.validated_renames
     _display_dry_run(validated, use_rich=use_rich)
 
     if not execute and not headless:
@@ -888,100 +892,27 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
             return
 
     did_execute = False
-    result = None
 
     if execute or (headless and not dry_run):
-        # Phase 8: Execution
-        from ai_file_rename.executor import execute_renames
+        # Update plan with user-reviewed renames (may have been modified)
+        plan.validated_renames = validated
 
-        logger.info("Executing renames...")
         with _phase_status(console, "Executing renames"):
-            result = execute_renames(
-                validated,
-                manifest_dir=target,
-                run_id=run_id,
-                config=config,
-                symlink_map=discovery.symlink_map,
-            )
-
-        # Attach token usage and cost estimate to result (ISSUE-07: these
-        # were previously 0 in the CSV ledger because they weren't set)
-        from ai_file_rename.constants import COST_PER_TOKEN
-
-        result.total_tokens_used = (
-            total_tokens["input_tokens"] + total_tokens["output_tokens"]
-        )
-        model_costs = COST_PER_TOKEN.get(config.model, {})
-        result.estimated_cost_usd = round(
-            total_tokens["input_tokens"] * model_costs.get("input", 0.0)
-            + total_tokens["output_tokens"] * model_costs.get("output", 0.0),
-            4,
-        )
+            result = session.execute(plan)
 
         did_execute = True
         report.update("completed", executed=True, result=result)
 
         _display_execution_result(result, use_rich=use_rich)
-
-        # Write to global history
-        history_record = {
-            "run_id": run_id,
-            "run_started_at": result.started_at.isoformat(),
-            "run_completed_at": result.completed_at.isoformat() if result.completed_at else None,
-            "target_directory": str(target),
-            "recursive": recursive,
-            "model_used": config.model,
-            "files_discovered": discovery.impact.total_files,
-            "files_renamed": result.renamed,
-            "files_skipped": result.skipped,
-            "files_failed": result.failed,
-            "symlinks_updated": result.symlinks_updated,
-            "renames": [
-                {"old": r.old_path.name, "new": r.new_path.name}
-                for r in result.results
-                if r.status == "completed"
-            ],
-        }
-        logger.append_to_history(history_record)
-
-        # Write to CSV session ledger
-        duration = None
-        if result.started_at and result.completed_at:
-            duration = round(
-                (result.completed_at - result.started_at).total_seconds(), 2
-            )
-        logger.append_to_csv_ledger({
-            "timestamp": (
-                result.completed_at.isoformat()
-                if result.completed_at
-                else result.started_at.isoformat()
-            ),
-            "run_id": run_id,
-            "target_directory": str(target),
-            "recursive": recursive,
-            "total_files_discovered": discovery.impact.total_files,
-            "total_folders_touched": discovery.impact.folders_affected,
-            "files_renamed": result.renamed,
-            "files_skipped": result.skipped,
-            "files_failed": result.failed,
-            "symlinks_updated": result.symlinks_updated,
-            "model_used": config.model,
-            "estimated_tokens": result.total_tokens_used,
-            "estimated_cost_usd": result.estimated_cost_usd,
-            "duration_seconds": duration,
-        })
-
         logger.info(f"Session {run_id} complete.")
 
-    # Final report update for dry-run path (execution path already updated above)
+    # Final report update for dry-run path
     if not did_execute:
         report.update("dry-run-complete")
     logger.info(f"Report: {report.report_path}")
 
     # --- Run Summary (logged for ALL runs including dry-run) ---
-    _analysis_failed = report.analysis_failures
-    analysis_failed_count = len(_analysis_failed)
-    total_token_count = total_tokens["input_tokens"] + total_tokens["output_tokens"]
+    total_token_count = plan.token_usage.total_tokens
 
     logger.info("=== RUN SUMMARY ===")
     logger.info(
@@ -989,26 +920,20 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         f"({discovery.impact.supported_files} supported, "
         f"{discovery.impact.unsupported_files} unsupported)"
     )
-    logger.info(f"Files analyzed: {len(processable_files)}")
-    if analysis_failed_count:
-        logger.info(f"Analysis failures: {analysis_failed_count}")
+    logger.info(f"Files analyzed: {discovery.impact.supported_files}")
+    if plan.analysis_failures:
+        logger.info(f"Analysis failures: {len(plan.analysis_failures)}")
     logger.info(
-        f"Names proposed: {len(all_renames)} "
-        f"({sum(1 for v in validated if not v.original.is_unchanged)} renames, "
-        f"{sum(1 for v in validated if v.original.is_unchanged)} unchanged)"
+        f"Names proposed: {len(plan.validated_renames)} "
+        f"({plan.total_renames} renames, "
+        f"{plan.total_unchanged} unchanged)"
     )
     logger.info(
-        f"Tokens: {total_tokens['input_tokens']:,} input + "
-        f"{total_tokens['output_tokens']:,} output = "
+        f"Tokens: {plan.token_usage.input_tokens:,} input + "
+        f"{plan.token_usage.output_tokens:,} output = "
         f"{total_token_count:,} total"
     )
-    from ai_file_rename.constants import COST_PER_TOKEN as _CPT
-    _mc = _CPT.get(config.model, {})
-    _est_cost = (
-        total_tokens["input_tokens"] * _mc.get("input", 0)
-        + total_tokens["output_tokens"] * _mc.get("output", 0)
-    )
-    logger.info(f"Estimated cost: ${_est_cost:.4f}")
+    logger.info(f"Estimated cost: ${session._estimate_cost(plan.token_usage):.4f}")
 
 
 @main.command()
@@ -1047,7 +972,7 @@ def history(directory, last_n, as_json):
     import json
 
     config = load_config()
-    run_id = _generate_run_id()
+    run_id = generate_run_id()
     logger = RenameLogger(config.log_dir, run_id)
 
     dir_filter = Path(directory) if directory else None

@@ -13,6 +13,7 @@ from typing import Optional
 
 from ai_file_rename.config import Config
 from ai_file_rename.constants import FORMAT_CATEGORIES, MIME_TYPE_MAP
+from ai_file_rename.context import _build_breadcrumb, _calculate_depth
 from ai_file_rename.models import (
     DiscoveryResult,
     FileCategory,
@@ -70,29 +71,6 @@ def _is_included(path: Path, include_patterns: list[str]) -> bool:
         if fnmatch.fnmatch(name, pattern):
             return True
     return False
-
-
-def _build_breadcrumb(folder_path: Path, root_path: Path) -> str:
-    """Build a human-readable breadcrumb from root to folder."""
-    try:
-        relative = folder_path.relative_to(root_path)
-    except ValueError:
-        return folder_path.name
-
-    parts = list(relative.parts)
-    if not parts:
-        return root_path.name
-
-    return " > ".join([root_path.name] + list(parts))
-
-
-def _calculate_depth(folder_path: Path, root_path: Path) -> int:
-    """Calculate nesting depth from root."""
-    try:
-        relative = folder_path.relative_to(root_path)
-        return len(relative.parts)
-    except ValueError:
-        return 0
 
 
 def build_symlink_map(

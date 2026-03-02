@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 
 from ai_file_rename.config import Config
+from ai_file_rename.context import _build_breadcrumb, _calculate_depth
 from ai_file_rename.discovery import (
-    _build_breadcrumb,
-    _calculate_depth,
     _classify_file,
     _is_excluded,
     build_symlink_map,
