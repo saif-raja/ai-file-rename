@@ -1,4 +1,4 @@
-# AI File Rename — Operations Manual
+# AI File Rename: Operations Manual
 
 > Version 1.0.0 | CLI reference for humans and agents
 
@@ -58,8 +58,8 @@ echo "GEMINI_API_KEY=your-key-here" > .env
 
 ### External tools (optional)
 
-- **LibreOffice** — required for DOCX/PPTX/XLSX to PDF conversion (`--skip-converted` to bypass)
-- **ffprobe** (part of FFmpeg) — fallback for video metadata when mutagen can't parse a format
+- **LibreOffice**: required for DOCX/PPTX/XLSX to PDF conversion (`--skip-converted` to bypass)
+- **ffprobe** (part of FFmpeg): fallback for video metadata when mutagen can't parse a format
 
 ---
 
@@ -132,7 +132,7 @@ The tool has two distinct modes designed for different use cases.
 
 ### Interactive Mode (DUI-Heavy)
 
-**When:** Default behavior — no special flags needed.
+**When:** Default behavior: no special flags needed.
 
 Best for manual, careful operations where you want to review every proposed rename before committing.
 
@@ -147,10 +147,10 @@ ai-rename rename ~/photos -r
 3. Analyze content and generate names (two Gemini API calls per folder)
 4. Display a rich table of proposed renames (current → proposed)
 5. Interactive review menu:
-   - **`[A]` Approve all** — execute every rename
-   - **`[R]` Reject all** — abort, no changes
-   - **`[E]` Edit** — review each file individually (accept / reject / custom name)
-   - **`[S]` Save & quit** — save the plan to `ai-rename-plan.json` for later
+   - **`[A]` Approve all**: execute every rename
+   - **`[R]` Reject all**: abort, no changes
+   - **`[E]` Edit**: review each file individually (accept / reject / custom name)
+   - **`[S]` Save & quit**: save the plan to `ai-rename-plan.json` for later
 6. Execute approved renames atomically
 7. Display execution summary
 
@@ -179,9 +179,9 @@ ai-rename rename ~/archive -r -x -H -P
 5. Print structured execution summary
 
 **Characteristics:**
-- No interactive prompts — fully autonomous
+- No interactive prompts: fully autonomous
 - Plain-text structured output (key: value format) for easy parsing
-- No Rich formatting — safe for log files and pipes
+- No Rich formatting: safe for log files and pipes
 - Machine-parseable status lines: `[PHASE]`, `[DONE]`, `[IMPACT ASSESSMENT]`, `[PROPOSED RENAMES]`, `[EXECUTION SUMMARY]`
 
 ### Mode Comparison
@@ -235,7 +235,7 @@ status: success
 
 ## CLI Reference
 
-### `rename` Command — All Flags & Options
+### `rename` Command: All Flags & Options
 
 | Flag / Option            | Short | Type    | Default            | Description                                                |
 |--------------------------|-------|---------|--------------------|------------------------------------------------------------|
@@ -243,13 +243,13 @@ status: success
 | `--execute`              | `-x`  | flag    | `False`            | Execute renames (skip dry-run-only behavior)               |
 | `--headless`             | `-H`  | flag    | `False`            | No interactive prompts; auto-confirm everything            |
 | `--dry-run`              | `-d`  | flag    | `False`            | Explicit dry-run (default behavior, overrides `-x`)        |
-| `--plain`                | `-P`  | flag    | `False`            | Plain text output — no Rich formatting                     |
+| `--plain`                | `-P`  | flag    | `False`            | Plain text output: no Rich formatting                     |
 | `--verbose`              | `-v`  | flag    | `False`            | Enable verbose logging to console                          |
 | `--config`               | `-c`  | path    | `~/.ai-rename.yaml`| Path to a custom YAML config file                          |
 | `--model`                | `-m`  | string  | `gemini-2.5-flash` | Gemini model to use                                        |
 | `--max-files`            |       | int     | `500`              | Max files to process in a single run                       |
 | `--custom-instructions`  | `-i`  | string  | None               | Extra naming instructions passed to Gemini                 |
-| `--cost-limit`           |       | float   | `5.00`             | USD cost limit — warns if estimated cost exceeds this      |
+| `--cost-limit`           |       | float   | `5.00`             | USD cost limit: warns if estimated cost exceeds this      |
 | `--include`              |       | glob    | None               | Glob pattern for files to include (e.g., `"*.jpg"`)        |
 | `--exclude`              |       | glob    | None               | Glob pattern for files to exclude (e.g., `"*.tmp"`)        |
 | `--skip-converted`       |       | flag    | `False`            | Skip format conversion (DOCX→PDF, SVG→PNG, etc.)          |
@@ -257,8 +257,8 @@ status: success
 
 ### Flag Interactions
 
-- `--dry-run` overrides `--execute` — if both are set, dry-run wins.
-- `--dry-run` also overrides `--headless` execution — headless mode will analyze and display proposed renames but will NOT execute them.
+- `--dry-run` overrides `--execute`: if both are set, dry-run wins.
+- `--dry-run` also overrides `--headless` execution: headless mode will analyze and display proposed renames but will NOT execute them.
 - `--headless` disables Rich output and skips all interactive prompts.
 - `--plain` can be used independently to get structured output even in interactive mode.
 
@@ -267,7 +267,7 @@ status: success
 | Model               | Cost (input/output per 1M tokens) | Best for                        |
 |----------------------|------------------------------------|---------------------------------|
 | `gemini-2.0-flash`   | $0.10 / $0.40                     | Fastest, cheapest               |
-| `gemini-2.5-flash`   | $0.15 / $0.60                     | Default — good balance          |
+| `gemini-2.5-flash`   | $0.15 / $0.60                     | Default: good balance          |
 | `gemini-2.5-pro`     | $1.25 / $5.00                     | Most capable, higher cost       |
 
 ---
@@ -276,10 +276,10 @@ status: success
 
 ### Precedence (highest to lowest)
 
-1. **CLI flags** — e.g., `--model gemini-2.5-pro`
-2. **Environment variables** — e.g., `GEMINI_API_KEY`, `AI_RENAME_MAX_FILES`
-3. **Config file** — `~/.ai-rename.yaml` (or path specified by `--config`)
-4. **Built-in defaults** — Pydantic model defaults
+1. **CLI flags**: e.g., `--model gemini-2.5-pro`
+2. **Environment variables**: e.g., `GEMINI_API_KEY`, `AI_RENAME_MAX_FILES`
+3. **Config file**: `~/.ai-rename.yaml` (or path specified by `--config`)
+4. **Built-in defaults**: Pydantic model defaults
 
 ### Environment Variables
 
@@ -373,9 +373,9 @@ The rename pipeline runs in 8 sequential phases:
         ↓
 [5] Context Building   Build folder hierarchy, breadcrumbs, sibling lists
         ↓
-[6] Content Analysis   Gemini API call #1 — per-file content summary
+[6] Content Analysis   Gemini API call #1: per-file content summary
         ↓
-[7] Holistic Naming    Gemini API call #2 — per-folder cohesive naming
+[7] Holistic Naming    Gemini API call #2: per-folder cohesive naming
         ↓
 [8] Validation         Sanitize names, resolve collisions, cross-platform checks
         ↓
@@ -392,7 +392,7 @@ When a folder contains exactly **1 file**, the tool skips the holistic naming AP
 - Content analysis via Gemini (the first API call still runs)
 - All validation and safety checks
 
-Only the *second* LLM call (holistic naming) is skipped — not the folder context.
+Only the *second* LLM call (holistic naming) is skipped: not the folder context.
 
 ### Metadata Extraction
 
@@ -418,7 +418,7 @@ ffprobe -v error -show_entries format=duration,bit_rate -of json file.mp4
 
 - 5-second timeout to prevent blocking
 - Graceful degradation: if ffprobe is not installed or fails, metadata is simply empty
-- No error is raised — the pipeline continues with whatever metadata is available
+- No error is raised: the pipeline continues with whatever metadata is available
 
 ---
 
@@ -429,9 +429,9 @@ The tool selects a naming strategy based on the number of files in each folder:
 | File Count | Strategy                 | Approach                                                  |
 |------------|--------------------------|-----------------------------------------------------------|
 | 1          | Single-File Optimization | Deterministic name from content summary (no LLM call)    |
-| 2–50       | FullHolisticStrategy     | One LLM call names all files together                    |
-| 51–200     | ClusteredHolisticStrategy| Cluster by content type, name each cluster separately    |
-| 201–500    | SampledHolisticStrategy  | Sample 50 files, establish pattern, apply to rest         |
+| 2-50       | FullHolisticStrategy     | One LLM call names all files together                    |
+| 51-200     | ClusteredHolisticStrategy| Cluster by content type, name each cluster separately    |
+| 201-500    | SampledHolisticStrategy  | Sample 50 files, establish pattern, apply to rest         |
 | 500+       | ProgressiveHolisticStrategy | Sequential batches of 50 with accumulated context      |
 
 ### Naming Rules
@@ -439,10 +439,10 @@ The tool selects a naming strategy based on the number of files in each folder:
 All generated names follow these cross-platform constraints:
 
 - Lowercase only
-- 2–8 hyphen-separated words (configurable)
+- 2-8 hyphen-separated words (configurable)
 - ASCII only (non-ASCII transliterated)
 - No forbidden characters: `< > : " / \ | ? *`
-- No Windows reserved names (CON, PRN, AUX, NUL, COM1–9, LPT1–9)
+- No Windows reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
 - Maximum 200 characters including extension
 - Extension is never changed
 - Each name is unique within its folder
@@ -494,7 +494,7 @@ The tool defaults to dry-run mode. No files are renamed unless you pass `--execu
 During execution, an ephemeral manifest file (`.ai-rename-manifest.json`) is written to the target directory:
 
 - Records each rename's status (`pending` → `completed`)
-- Enables crash recovery — if the process is interrupted, the next run detects the manifest and offers: **resume**, **undo**, or **discard**
+- Enables crash recovery: if the process is interrupted, the next run detects the manifest and offers: **resume**, **undo**, or **discard**
 - Automatically cleaned up on successful completion
 
 ### Undo
@@ -547,18 +547,18 @@ Example: `.ai-rename-report-20260301-501df6ed.md`
 | `starting` | Run initialized, about to discover files |
 | `discovered` | File discovery complete, impact summary available |
 | `analyzing` | Content analysis in progress with Gemini |
-| `proposed` | Names generated — rename table available |
+| `proposed` | Names generated: rename table available |
 | `completed` | Renames executed successfully |
-| `dry-run-complete` | Dry-run finished — no files were modified |
+| `dry-run-complete` | Dry-run finished: no files were modified |
 
-**Report contents (cumulative — each phase adds data):**
+**Report contents (cumulative: each phase adds data):**
 - Run metadata: run ID, start timestamp, model, target, recursive flag
 - Current status and mode (dry-run vs executed)
 - Impact summary: files found, supported, unsupported
 - Token usage and estimated cost
 - Markdown table of all proposed renames (current name / proposed name / notes)
 - Analysis failures list
-- Execution results (renamed/skipped/failed counts) — only after execution
+- Execution results (renamed/skipped/failed counts): only after execution
 
 **For humans watching a long-running job:**
 ```bash
@@ -641,7 +641,7 @@ pip install google-genai
 
 **Video metadata missing**
 - Install FFmpeg for ffprobe: `brew install ffmpeg` (macOS)
-- Metadata is optional — the pipeline continues without it
+- Metadata is optional: the pipeline continues without it
 
 **"Estimated cost exceeds limit"**
 - Increase the limit: `--cost-limit 10.00`
@@ -659,9 +659,9 @@ All sessions are logged to `~/.ai-rename/logs/`:
 
 If a run is interrupted mid-rename, the next run in the same directory detects the manifest and offers:
 
-- **Resume** — continue pending renames
-- **Undo** — reverse completed renames
-- **Discard** — delete the manifest and start fresh
+- **Resume**: continue pending renames
+- **Undo**: reverse completed renames
+- **Discard**: delete the manifest and start fresh
 
 ---
 

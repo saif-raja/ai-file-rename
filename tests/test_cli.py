@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.cli — CLI entrypoint and command wiring."""
+"""Tests for ai_file_rename.cli: CLI entrypoint and command wiring."""
 
 from pathlib import Path
 

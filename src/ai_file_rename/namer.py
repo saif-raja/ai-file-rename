@@ -1,7 +1,7 @@
 """
 Holistic naming engine for ai-file-rename.
 
-Generates names for ALL files in a folder as a cohort — the second of two LLM calls.
+Generates names for ALL files in a folder as a cohort: the second of two LLM calls.
 Uses a strategy pattern for scaling to different folder sizes.
 """
 
@@ -166,7 +166,7 @@ def _parse_naming_response(
         if file_entry is None:
             if logger:
                 logger.warning(
-                    f"  [naming-miss] {current_name} — "
+                    f"  [naming-miss] {current_name}: "
                     f"present in Gemini response but not in input set"
                 )
             continue
@@ -193,7 +193,7 @@ def _parse_naming_response(
         missing = input_names - matched_names
         for name in missing:
             logger.warning(
-                f"  [naming-miss] {name} — "
+                f"  [naming-miss] {name}: "
                 f"not found in Gemini response, will not be renamed"
             )
 
@@ -601,7 +601,7 @@ async def name_folder(
     """
     # Filter out files that had analysis errors or are unnameable.
     # Files with error/unknown/skipped content_type, or confidence below
-    # threshold, should NOT be renamed — they would produce garbage names
+    # threshold, should NOT be renamed: they would produce garbage names
     # derived from error messages (see ISSUE-01).
     _SKIP_CONTENT_TYPES = frozenset({"skipped", "error", "unknown"})
     _MIN_CONFIDENCE = 0.1
@@ -611,14 +611,14 @@ async def name_folder(
         if f.summary.content_type in _SKIP_CONTENT_TYPES:
             if logger:
                 logger.info(
-                    f"  [skipped] {f.enriched.entry.name} — "
+                    f"  [skipped] {f.enriched.entry.name}: "
                     f"analysis {f.summary.content_type}, excluded from naming"
                 )
             continue
         if f.summary.confidence < _MIN_CONFIDENCE:
             if logger:
                 logger.info(
-                    f"  [skipped] {f.enriched.entry.name} — "
+                    f"  [skipped] {f.enriched.entry.name}: "
                     f"low confidence ({f.summary.confidence:.2f}), excluded"
                 )
             continue
@@ -627,7 +627,7 @@ async def name_folder(
     if not processable:
         return [], {"input_tokens": 0, "output_tokens": 0}
 
-    # All files — including single-file folders — go through the LLM.
+    # All files, including single-file folders, go through the LLM.
     strategy = select_strategy(len(processable))
     return await strategy.generate_names(
         processable, folder_context, client, model, config, logger=logger

@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.metadata — metadata extraction from files."""
+"""Tests for ai_file_rename.metadata: metadata extraction from files."""
 
 import json
 from pathlib import Path

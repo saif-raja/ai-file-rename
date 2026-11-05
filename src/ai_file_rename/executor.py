@@ -224,9 +224,9 @@ def execute_renames(
         except OSError as e:
             if _is_locked_file_error(e):
                 # Locked file: skip and continue (PRD exception to halt-on-failure).
-                # Manifest records this as "failed" (mechanically correct — the
+                # Manifest records this as "failed" (mechanically correct: the
                 # rename was attempted and couldn't proceed). ExecutionResult
-                # counts it as "skipped" (user-facing — the batch continued).
+                # counts it as "skipped" (user-facing: the batch continued).
                 # On resume, manifest.pending_renames excludes "failed" entries
                 # so this file won't be retried automatically.
                 error = f"File locked by another process, skipping: {e}"

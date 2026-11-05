@@ -1,4 +1,4 @@
-"""Integration tests for ai-file-rename — end-to-end pipeline with mocked Gemini."""
+"""Integration tests for ai-file-rename: end-to-end pipeline with mocked Gemini."""
 
 import json
 import os
@@ -173,7 +173,7 @@ class TestCollisionHandling:
     """Test name collision detection and resolution."""
 
     def test_internal_collision_resolution(self, temp_dir):
-        """Two files get the same proposed name — numeric suffix applied."""
+        """Two files get the same proposed name: numeric suffix applied."""
         (temp_dir / "a.pdf").write_bytes(b"pdf a")
         (temp_dir / "b.pdf").write_bytes(b"pdf b")
 

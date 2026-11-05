@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.discovery — file system scanning and inventory."""
+"""Tests for ai_file_rename.discovery: file system scanning and inventory."""
 
 import os
 from pathlib import Path

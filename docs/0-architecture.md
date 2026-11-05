@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0
 **Date:** 2026-02-26
-**Status:** Draft — Awaiting Review
+**Status:** Draft: Awaiting Review
 **Companion:** [PRD.md](./PRD.md)
 
 ---
@@ -29,7 +29,7 @@
 
 ### Design Philosophy
 
-The architecture follows a **pipeline pattern** — data flows linearly through a sequence of stateless transformations. Each stage takes structured input and produces structured output. There are no feedback loops, no recursion, and no autonomous decision-making. The LLM is called exactly twice per folder: once for content analysis (batched), once for holistic naming.
+The architecture follows a **pipeline pattern**: data flows linearly through a sequence of stateless transformations. Each stage takes structured input and produces structured output. There are no feedback loops, no recursion, and no autonomous decision-making. The LLM is called exactly twice per folder: once for content analysis (batched), once for holistic naming.
 
 ```
                     ┌─────────────────────────────────────────────┐
@@ -394,7 +394,7 @@ class ImpactSummary(BaseModel):
 
 ## 5. Module Specifications
 
-### 5.1 `cli.py` — CLI Entrypoint
+### 5.1 `cli.py`: CLI Entrypoint
 
 **Responsibility:** Parse CLI arguments, wire up the pipeline, manage interactive prompts.
 
@@ -442,7 +442,7 @@ def history(directory, last, as_json):
 - In headless mode, all prompts are auto-confirmed.
 - The `rename` command orchestrates the full pipeline. It is the only place where all modules are composed.
 
-### 5.2 `discovery.py` — File System Scanner
+### 5.2 `discovery.py`: File System Scanner
 
 **Responsibility:** Walk the target directory, classify every file, detect symlinks, build the inventory.
 
@@ -473,9 +473,9 @@ def discover(
 - Builds reverse symlink map: for each regular file, which symlinks point to it.
 - Applies exclude patterns from config.
 - Applies `--max-files` safety limit.
-- Does NOT read file contents — only file system metadata.
+- Does NOT read file contents: only file system metadata.
 
-### 5.3 `preprocessing.py` — Format Converter
+### 5.3 `preprocessing.py`: Format Converter
 
 **Responsibility:** Convert files that Gemini cannot process natively into processable formats.
 
@@ -517,9 +517,9 @@ CONVERSION_MAP = {
 **Design notes:**
 - All conversions write to a dedicated temp directory (auto-cleaned on exit).
 - If a conversion tool is not installed (e.g., LibreOffice), the file is marked as `TEXT_EXTRACTABLE` fallback and the user is warned.
-- Conversion errors are non-fatal — the file is skipped with a warning.
+- Conversion errors are non-fatal: the file is skipped with a warning.
 
-### 5.4 `metadata.py` — Metadata Extractor
+### 5.4 `metadata.py`: Metadata Extractor
 
 **Responsibility:** Extract both OS-level and format-specific metadata from each file.
 
@@ -570,12 +570,12 @@ METADATA_EXTRACTORS = {
 ```
 
 **Design notes:**
-- Each extractor function is wrapped in a try/except — if extraction fails, it returns an empty `FileMetadata` with only `os.stat` data.
+- Each extractor function is wrapped in a try/except: if extraction fails, it returns an empty `FileMetadata` with only `os.stat` data.
 - Each extractor has a 5-second timeout (using `signal.alarm` on POSIX, threading on Windows).
-- Libraries are imported lazily — if `Pillow` is not installed, image EXIF extraction gracefully degrades to size/dates only.
+- Libraries are imported lazily: if `Pillow` is not installed, image EXIF extraction gracefully degrades to size/dates only.
 - GPS reverse geocoding is optional (requires `reverse_geocoder` library).
 
-### 5.5 `context.py` — Context Builder
+### 5.5 `context.py`: Context Builder
 
 **Responsibility:** Enrich files with folder hierarchy context and group them by parent folder.
 
@@ -608,7 +608,7 @@ class FolderContext(BaseModel):
     file_count: int
 ```
 
-### 5.6 `analyzer.py` — Content Analyzer (Gemini)
+### 5.6 `analyzer.py`: Content Analyzer (Gemini)
 
 **Responsibility:** Send files to Gemini for content analysis. The first of two LLM calls.
 
@@ -661,7 +661,7 @@ def create_batches(files: list[EnrichedFile], max_batch_bytes: int = 80_000_000)
 - Metadata is serialized to JSON and injected into the prompt context block.
 - For text-extractable files, the file content (first N lines/bytes) is included inline instead of uploading.
 
-### 5.7 `namer.py` — Holistic Naming Engine (Gemini)
+### 5.7 `namer.py`: Holistic Naming Engine (Gemini)
 
 **Responsibility:** Generate names for ALL files in a folder as a cohort. The second of two LLM calls.
 
@@ -727,7 +727,7 @@ def select_strategy(file_count: int) -> NamingStrategy:
         return ProgressiveHolisticStrategy()
 ```
 
-### 5.8 `validator.py` — Name Validator
+### 5.8 `validator.py`: Name Validator
 
 **Responsibility:** Ensure all proposed names are valid, unique, and cross-platform safe.
 
@@ -765,7 +765,7 @@ def resolve_collisions(renames: list[ProposedRename]) -> list[ProposedRename]:
     """
 ```
 
-### 5.9 `executor.py` — Safe Rename Executor
+### 5.9 `executor.py`: Safe Rename Executor
 
 **Responsibility:** Execute renames atomically with manifest tracking.
 
@@ -798,7 +798,7 @@ def undo_renames(manifest_path: Path) -> ExecutionResult:
     """
 ```
 
-### 5.10 `manifest.py` — Ephemeral State Manager
+### 5.10 `manifest.py`: Ephemeral State Manager
 
 **Responsibility:** Manage the working manifest file for crash recovery and undo.
 
@@ -847,7 +847,7 @@ class Manifest:
 - `flush()` calls `os.fsync()` to ensure data reaches disk.
 - The manifest file is hidden (`.ai-rename-manifest.json`) to avoid clutter.
 
-### 5.11 `logger.py` — Dual-Level Logger
+### 5.11 `logger.py`: Dual-Level Logger
 
 **Responsibility:** Manage both session logging and the global rename history.
 
@@ -878,7 +878,7 @@ class RenameLogger:
         """Query the global history log with optional filters."""
 ```
 
-### 5.12 `config.py` — Configuration Manager
+### 5.12 `config.py`: Configuration Manager
 
 **Responsibility:** Resolve configuration from multiple sources.
 
@@ -951,7 +951,7 @@ Tested on macOS (POSIX semantics apply to Linux as well):
 |----------|--------|
 | Rename a symlink itself | **SAFE.** The symlink's target is unchanged. Link still works. |
 | Rename a file with relative symlink pointing to it | **BREAKS.** Symlink target `real-file.txt` no longer exists after rename to `new-name.txt`. |
-| Rename a file with absolute symlink pointing to it | **BREAKS.** Same — the stored path no longer resolves. |
+| Rename a file with absolute symlink pointing to it | **BREAKS.** Same: the stored path no longer resolves. |
 | `os.rename()` on symlink | Renames the link, not the target. Correct behavior. |
 
 ### Architecture Decision
@@ -1012,7 +1012,7 @@ def update_symlinks_for_rename(
         symlink = entry.symlink_path
 
         if not symlink.is_symlink():
-            # Symlink was itself renamed or removed — skip
+            # Symlink was itself renamed or removed: skip
             results.append((symlink, False))
             continue
 
@@ -1092,7 +1092,7 @@ def extract_image_exif(file_path: Path) -> dict:
         from PIL import Image
         from PIL.ExifTags import TAGS, GPSTAGS
     except ImportError:
-        return {}  # Pillow not installed — graceful degradation
+        return {}  # Pillow not installed: graceful degradation
 
     # ... extraction logic ...
 ```
@@ -1259,7 +1259,7 @@ This is enforced by checking for an existing manifest at the start of the execut
 
 ### API Rate Limit Coordination
 
-Multiple instances share the same API key and therefore the same rate limits. Each instance independently tracks its own call rate. If an instance hits a rate limit error (HTTP 429), it backs off with exponential retry. There is no cross-instance coordination — each instance handles rate limits independently, which is sufficient for the expected usage pattern (a few concurrent instances, not hundreds).
+Multiple instances share the same API key and therefore the same rate limits. Each instance independently tracks its own call rate. If an instance hits a rate limit error (HTTP 429), it backs off with exponential retry. There is no cross-instance coordination: each instance handles rate limits independently, which is sufficient for the expected usage pattern (a few concurrent instances, not hundreds).
 
 ---
 
@@ -1355,7 +1355,7 @@ Avoid duplicating any of the names above.
 4. Continue until all batches are named.
 5. Each successive batch has the cumulative list of all prior names as context.
 
-**Context window management:** As the cumulative name list grows, only the names (not full summaries) of prior batches are included. At 500+ files, the prior name list is ~5,000 tokens — manageable.
+**Context window management:** As the cumulative name list grows, only the names (not full summaries) of prior batches are included. At 500+ files, the prior name list is ~5,000 tokens: manageable.
 
 ---
 
@@ -1389,7 +1389,7 @@ class NamingError(RenameError):
     severity: str = "error"  # Fatal for the folder (can't name any files)
 
 class ValidationError(RenameError):
-    """Name validation failure (should not happen — indicates bug)."""
+    """Name validation failure (should not happen: indicates bug)."""
     severity: str = "error"
 
 class ExecutionError(RenameError):
@@ -1406,7 +1406,7 @@ class ExecutionError(RenameError):
 | Metadata | Per-file. Proceed with minimal metadata, log at debug level. |
 | Analysis | Per-file. Skip file with warning. If ALL files in a folder fail, skip the folder. |
 | Naming | Per-folder. If the naming prompt fails, skip the entire folder with an error. |
-| Validation | Should never fail (it sanitizes, not rejects). If it does, it's a bug — abort. |
+| Validation | Should never fail (it sanitizes, not rejects). If it does, it's a bug: abort. |
 | Execution | Per-file. Halt the ENTIRE batch on first failure. Preserve manifest. |
 
 ### Recovery State Machine
@@ -1581,7 +1581,7 @@ The modules should be implemented in this order, with each step building on the 
 Phase 1: Foundation
 ├── Step 1: models.py + constants.py    (data types, format maps, naming rules)
 ├── Step 2: config.py                    (configuration loading)
-├── Step 3: validator.py                 (name validation — can be tested independently)
+├── Step 3: validator.py                 (name validation, can be tested independently)
 └── Step 4: logger.py                    (logging infrastructure)
 
 Phase 2: Pipeline Stages
@@ -1605,7 +1605,7 @@ Phase 4: Polish
 
 ### Phase 1 Rationale
 
-Start with `models.py` because every other module imports from it. `constants.py` defines format maps that `discovery.py` and `preprocessing.py` need. `validator.py` is a pure function with no dependencies — it can be fully tested in isolation. `config.py` is needed by everything but depends on nothing.
+Start with `models.py` because every other module imports from it. `constants.py` defines format maps that `discovery.py` and `preprocessing.py` need. `validator.py` is a pure function with no dependencies: it can be fully tested in isolation. `config.py` is needed by everything but depends on nothing.
 
 ### Phase 2 Rationale
 
@@ -1637,4 +1637,4 @@ Each module can be tested independently:
 
 ---
 
-*End of Architecture Design — v1.0.0*
+*End of Architecture Design: v1.0.0*

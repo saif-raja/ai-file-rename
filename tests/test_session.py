@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.session — RenameSession programmatic API."""
+"""Tests for ai_file_rename.session: RenameSession programmatic API."""
 
 from pathlib import Path
 
@@ -91,7 +91,7 @@ class TestRenameSessionAnalyze:
 
     def test_analyze_returns_plan(self, temp_dir):
         # Create a file so discovery finds something
-        # But analyze() will try to call Gemini — which will fail without a real key
+        # But analyze() will try to call Gemini, which will fail without a real key
         # We can still test that it gets past discovery
         (temp_dir / "test.txt").write_text("hello world")
 
@@ -104,7 +104,7 @@ class TestRenameSessionAnalyze:
         try:
             plan = session.analyze()
         except Exception:
-            # Expected — no valid API key
+            # Expected: no valid API key
             pass
 
     def test_analyze_skips_files_with_skip_reason(self, temp_dir):

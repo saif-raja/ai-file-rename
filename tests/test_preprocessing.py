@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.preprocessing — format conversion."""
+"""Tests for ai_file_rename.preprocessing: format conversion."""
 
 from pathlib import Path
 

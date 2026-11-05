@@ -74,7 +74,7 @@ class RenameLogger:
         self._logger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self._logger.handlers.clear()
 
-        # File handler — always DEBUG level for full trace.
+        # File handler: always DEBUG level for full trace.
         # delay=True defers file creation until the first log message,
         # preventing 0-byte orphan files from aborted sessions (ISSUE-06).
         file_handler = logging.FileHandler(self.session_log, encoding="utf-8", delay=True)
@@ -87,7 +87,7 @@ class RenameLogger:
         )
         self._logger.addHandler(file_handler)
 
-        # Console handler — respects verbose flag
+        # Console handler: respects verbose flag
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
         console_handler.setFormatter(

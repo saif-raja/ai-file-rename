@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.models — Pydantic data model validation."""
+"""Tests for ai_file_rename.models: Pydantic data model validation."""
 
 from datetime import datetime
 from pathlib import Path

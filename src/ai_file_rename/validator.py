@@ -2,7 +2,7 @@
 Name validation and collision resolution for ai-file-rename.
 
 Ensures all proposed names are valid, unique, and cross-platform safe.
-This module is a pure function — no side effects, no I/O, no external deps.
+This module is a pure function: no side effects, no I/O, no external deps.
 """
 
 import re
@@ -33,7 +33,7 @@ def sanitize_name(proposed_name: str) -> str:
     """
     Sanitize a proposed file stem to be cross-platform safe.
 
-    This does NOT include the extension — only the stem is sanitized.
+    This does NOT include the extension: only the stem is sanitized.
 
     Steps:
     1. Transliterate Unicode to ASCII
@@ -142,7 +142,7 @@ def resolve_collisions(renames: list[ProposedRename]) -> list[ProposedRename]:
         proposed_lower = rename.proposed_name.lower()
 
         if proposed_lower in name_counts:
-            # Collision — append suffix
+            # Collision: append suffix
             count = name_counts[proposed_lower] + 1
             name_counts[proposed_lower] = count
 

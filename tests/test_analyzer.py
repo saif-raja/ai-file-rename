@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.analyzer — content analysis with Gemini."""
+"""Tests for ai_file_rename.analyzer: content analysis with Gemini."""
 
 import asyncio
 import json

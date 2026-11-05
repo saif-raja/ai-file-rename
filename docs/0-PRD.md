@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Date:** 2026-02-25
 **Author:** Auto-generated from stakeholder interview
-**Status:** Draft — Awaiting Review
+**Status:** Draft: Awaiting Review
 
 ---
 
@@ -41,7 +41,7 @@
 
 **ai-file-rename** is a lightweight, deterministic CLI tool (and Python library) that uses Google's Gemini AI to intelligently rename files based on their actual content, contextual placement within a folder hierarchy, and relationship to sibling files. It transforms cryptic, default-download file names into semantically rich, descriptive names that enable both humans and AI agents to instantly understand a file's purpose without opening it.
 
-The tool is designed for a specific personal use case: making 15+ years of accumulated digital files — scattered across deep folder hierarchies with meaningless names — discoverable and useful again. The design philosophy is **deterministic over agentic**: a structured pipeline with predefined rules, not an autonomous agent making decisions.
+The tool is designed for a specific personal use case: making 15+ years of accumulated digital files, scattered across deep folder hierarchies with meaningless names, discoverable and useful again. The design philosophy is **deterministic over agentic**: a structured pipeline with predefined rules, not an autonomous agent making decisions.
 
 ### Design Principles
 
@@ -69,20 +69,20 @@ A user has accumulated 15+ years of digital files across a personal hard drive. 
 
 ### The Consequence
 
-When an AI agent (or the user themselves) runs `ls` in any folder, they see a wall of meaningless names. The files are effectively invisible — present on disk but inaccessible to any workflow that relies on file names for navigation or context. In the era of AI-assisted workflows, where agents scan directories to understand available resources, **file names ARE the interface**.
+When an AI agent (or the user themselves) runs `ls` in any folder, they see a wall of meaningless names. The files are effectively invisible: present on disk but inaccessible to any workflow that relies on file names for navigation or context. In the era of AI-assisted workflows, where agents scan directories to understand available resources, **file names ARE the interface**.
 
 ### Why Now
 
-Until recently, the only solution was manual renaming — opening each file, understanding its content, and choosing a descriptive name. For 10,000+ files, this is impractical. LLMs with multimodal capabilities (specifically Google Gemini) can now read images, PDFs, documents, audio, and video and produce contextual descriptions — enabling automated, intelligent renaming at scale.
+Until recently, the only solution was manual renaming: opening each file, understanding its content, and choosing a descriptive name. For 10,000+ files, this is impractical. LLMs with multimodal capabilities (specifically Google Gemini) can now read images, PDFs, documents, audio, and video and produce contextual descriptions: enabling automated, intelligent renaming at scale.
 
 ### Why Gemini Specifically
 
 Multiple LLM providers offer multimodal support, but Google's Gemini (via the `google-genai` SDK) provides the most comprehensive file processing pipeline:
 
-- **Native PDF vision** — full visual understanding of charts, diagrams, tables, and layouts (not just text extraction).
-- **File Upload API** — upload files up to 2 GB, retained for 48 hours, free to use.
-- **Broad format support** — images, audio, video, and documents in a unified API.
-- **Unified SDK** — the `google-genai` package works with both Google AI Studio (API key) and Vertex AI (service account), so the user is never locked in.
+- **Native PDF vision**: full visual understanding of charts, diagrams, tables, and layouts (not just text extraction).
+- **File Upload API**: upload files up to 2 GB, retained for 48 hours, free to use.
+- **Broad format support**: images, audio, video, and documents in a unified API.
+- **Unified SDK**: the `google-genai` package works with both Google AI Studio (API key) and Vertex AI (service account), so the user is never locked in.
 
 ---
 
@@ -373,7 +373,7 @@ See [Section 9: Holistic Naming Engine](#9-holistic-naming-engine) for full deta
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
-║  PROPOSED RENAMES — ~/documents/research/ml-papers/                  ║
+║  PROPOSED RENAMES: ~/documents/research/ml-papers/                  ║
 ╠═══════════════════════════════════════════════════════════════════════╣
 ║  #  │ Current Name              │ Proposed Name                      ║
 ║  ───┼───────────────────────────┼──────────────────────────────────── ║
@@ -477,7 +477,7 @@ The Gemini naming prompt includes these quality criteria:
 
 ## 9. Holistic Naming Engine
 
-This is the most critical component of the system. Files within a folder are NOT named independently — they are named as a cohort, with full awareness of each other.
+This is the most critical component of the system. Files within a folder are NOT named independently: they are named as a cohort, with full awareness of each other.
 
 ### Why Holistic Naming Matters
 
@@ -549,7 +549,7 @@ NAMING RULES:
 INSTRUCTIONS:
 1. Consider all files as a SET. Each name should occupy a distinct
    semantic niche within the folder's context.
-2. Use the folder hierarchy as implicit context — don't repeat folder
+2. Use the folder hierarchy as implicit context: don't repeat folder
    name information in file names. If the folder is "invoices-2023",
    don't name files "invoice-january-2023.pdf". Just "january.pdf"
    or "january-acme-corp.pdf" is sufficient.
@@ -591,7 +591,7 @@ The holistic approach works brilliantly for folders with up to ~50 files. Beyond
 When a folder has more files than can fit in a single holistic prompt:
 
 1. **Cluster by content type.** Group all images together, all PDFs together, etc.
-2. **Within content types, cluster by semantic similarity.** Using the content summaries from the analysis phase, compute simple keyword overlap to group related files. This is NOT a vector embedding search — it is simple TF-IDF or keyword matching on the summaries, keeping the tool lightweight.
+2. **Within content types, cluster by semantic similarity.** Using the content summaries from the analysis phase, compute simple keyword overlap to group related files. This is NOT a vector embedding search: it is simple TF-IDF or keyword matching on the summaries, keeping the tool lightweight.
 3. **Name each cluster holistically**, providing a folder-level preamble that lists ALL cluster names so the model knows what other groups exist.
 
 ---
@@ -605,7 +605,7 @@ File safety is the highest priority. A renamed file that is lost or corrupted is
 Each file rename follows this exact sequence:
 
 ```python
-# PSEUDOCODE — Atomic rename protocol
+# PSEUDOCODE: Atomic rename protocol
 
 def safe_rename(old_path, new_path, manifest):
     # 1. Pre-flight checks
@@ -659,7 +659,7 @@ def safe_rename(old_path, new_path, manifest):
 
 The tool NEVER overwrites an existing file. If the proposed new name already exists:
 
-1. First, check if the existing file and the file being renamed have identical content (same size + hash). If yes, this is a potential duplicate — flag it to the user but do NOT rename or delete either.
+1. First, check if the existing file and the file being renamed have identical content (same size + hash). If yes, this is a potential duplicate: flag it to the user but do NOT rename or delete either.
 2. If they differ, append a numeric suffix: `report-quarterly-2023.pdf` -> `report-quarterly-2023-2.pdf`.
 3. Numeric suffixes are applied DURING the validation phase (before execution), so the user sees them in the dry-run preview.
 
@@ -710,7 +710,7 @@ The tool maintains state at two levels:
 
 #### Tier 2: Persistent Global Log (Append-Only)
 
-- **Location:** `{tool_install_directory}/logs/rename-history.jsonl` (JSONL format — one JSON object per line)
+- **Location:** `{tool_install_directory}/logs/rename-history.jsonl` (JSONL format: one JSON object per line)
 - **Lifecycle:** Permanent. Never deleted. Append-only.
 - **Purpose:** Audit trail. Enables querying rename history across all sessions. Supports multiple concurrent instances operating on different directories without conflict.
 - **Concurrency safety:** The log file uses JSONL (one record per line) with file-level locking (`fcntl.flock` on POSIX, `msvcrt.locking` on Windows) to ensure atomic appends. Multiple instances of the tool running simultaneously against different directories will safely interleave their log entries without corruption.
@@ -913,17 +913,17 @@ session.undo()
 
 The tool uses the unified `google-genai` Python SDK, which supports both Google AI Studio (API key) and Vertex AI (service account) through the same interface.
 
-**Default: Google AI Studio (API key).** This is simpler and sufficient for all multimodal file processing needs. The multimodal capabilities are identical between Google AI Studio and Vertex AI — they use the same underlying models.
+**Default: Google AI Studio (API key).** This is simpler and sufficient for all multimodal file processing needs. The multimodal capabilities are identical between Google AI Studio and Vertex AI, they use the same underlying models.
 
 ### Authentication
 
 ```python
 from google import genai
 
-# Google AI Studio (default — API key)
+# Google AI Studio (default: API key)
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-# Vertex AI (optional — service account)
+# Vertex AI (optional: service account)
 client = genai.Client(
     vertexai=True,
     project="my-project",
@@ -973,7 +973,7 @@ response = client.models.generate_content(
 | `gemini-2.5-pro` | Maximum quality for difficult-to-analyze files. | Higher | Slower |
 
 The default model (`gemini-2.0-flash`) is recommended for the file renaming use case because:
-- File naming does not require deep reasoning — it requires breadth (understanding many file types) and precision (extracting key identifiers).
+- File naming does not require deep reasoning: it requires breadth (understanding many file types) and precision (extracting key identifiers).
 - Flash models process files faster, which matters when processing hundreds of files.
 - Cost is lower, enabling batch processing without budget concerns.
 
@@ -1015,7 +1015,7 @@ This eliminates the need for fragile regex parsing of LLM output.
 
 ### Rationale
 
-File content alone does not tell the full story. A file's metadata — creation date, modification date, file size, author, embedded document title, EXIF camera data, audio duration — provides critical supplementary context that can make the difference between a generic name and a truly informative one.
+File content alone does not tell the full story. A file's metadata: creation date, modification date, file size, author, embedded document title, EXIF camera data, audio duration: provides critical supplementary context that can make the difference between a generic name and a truly informative one.
 
 **The metadata is NOT used directly in file names** (we don't name files `report-2023-12-01-4.2mb.pdf`). Instead, metadata is fed into the Gemini content analysis prompt as additional context, allowing the LLM to make better-informed decisions. For example:
 
@@ -1031,7 +1031,7 @@ File content alone does not tell the full story. A file's metadata — creation 
 
 ### Metadata Extraction Strategy
 
-Metadata extraction happens BEFORE the Gemini API call, during the preprocessing phase. It is a best-effort operation — if extraction fails for any file, the tool proceeds with whatever metadata is available (at minimum, `os.stat` data is always available).
+Metadata extraction happens BEFORE the Gemini API call, during the preprocessing phase. It is a best-effort operation: if extraction fails for any file, the tool proceeds with whatever metadata is available (at minimum, `os.stat` data is always available).
 
 #### Universal Metadata (All Files)
 
@@ -1051,7 +1051,7 @@ Extracted via Python's `os.stat()` / `pathlib.Path.stat()`:
 }
 ```
 
-**Note on `os.rename()` and metadata preservation:** Verified that `os.rename()` preserves ALL file metadata (inode, mtime, birthtime, size, permissions). This is because `os.rename()` on the same filesystem is a directory entry operation — it does not copy the file, so all metadata remains intact.
+**Note on `os.rename()` and metadata preservation:** Verified that `os.rename()` preserves ALL file metadata (inode, mtime, birthtime, size, permissions). This is because `os.rename()` on the same filesystem is a directory entry operation: it does not copy the file, so all metadata remains intact.
 
 #### Format-Specific Metadata
 
@@ -1293,9 +1293,9 @@ This allows domain-specific naming conventions without modifying the tool's core
 
 ### Log Destinations
 
-1. **Terminal output** — Real-time progress and results.
-2. **Session log file** — Per-run detailed log: `~/.ai-rename/logs/session-{session_id}.log`
-3. **Global rename history** — Append-only JSONL: `~/.ai-rename/logs/rename-history.jsonl`
+1. **Terminal output**: Real-time progress and results.
+2. **Session log file**: Per-run detailed log: `~/.ai-rename/logs/session-{session_id}.log`
+3. **Global rename history**: Append-only JSONL: `~/.ai-rename/logs/rename-history.jsonl`
 
 ### Cost Tracking
 
@@ -1327,7 +1327,7 @@ Session Summary:
 | **Corrupt/unreadable file** | Skip with warning. Do not halt the batch. |
 | **File name is already the proposed name** | Skip (no-op). Report as "unchanged." |
 | **Two files would get the same name** | Append numeric suffix to the second file. Report the collision. |
-| **File is a symlink** | **Safe to rename.** Renaming a symlink via `os.rename()` only changes the link's name — the internal target path is unchanged, the link still resolves correctly. The tool processes and renames symlinks just like regular files. However, the content analysis step reads the *target* file's content (via the symlink), so the generated name describes the target's content, which is correct. |
+| **File is a symlink** | **Safe to rename.** Renaming a symlink via `os.rename()` only changes the link's name: the internal target path is unchanged, the link still resolves correctly. The tool processes and renames symlinks just like regular files. However, the content analysis step reads the *target* file's content (via the symlink), so the generated name describes the target's content, which is correct. |
 | **File is a symlink TARGET** | **DANGER.** If a regular file has incoming symlinks pointing to it, renaming the file breaks those symlinks (they become dangling). During discovery, the tool scans for symlinks in the target directory and builds a reverse map of `file -> [symlinks pointing to it]`. If a file is a symlink target: (1) warn the user in the dry-run preview, (2) if the user confirms, update all affected symlinks to point to the new name after the rename. This is an additional atomic step in the execution phase. |
 | **Symlink points outside target directory** | The symlink itself is renamable (safe). The target is not modified. The content analysis reads the external target for context. The tool notes in the dry-run that this symlink references an external path. |
 | **Insufficient permissions** | Report which files are not writable. Do not attempt rename. |
@@ -1374,7 +1374,7 @@ If the tool crashes or is interrupted mid-execution:
 
 ### Cross-Platform Strategy
 
-The tool uses the **intersection of all restrictions** — the most restrictive rule from any platform applies universally:
+The tool uses the **intersection of all restrictions**: the most restrictive rule from any platform applies universally:
 
 - Max filename: **200 characters** (conservative, leaving room for path)
 - Forbidden chars: `< > : " / \ | ? * NUL` (union of all platforms)
@@ -1408,7 +1408,7 @@ This means a file renamed on macOS will have a valid name when the hard drive is
 
 ### Injection Prevention
 
-- File names are sanitized before any shell operations (though the tool avoids shell operations — it uses Python's `os.rename()` and `pathlib` directly).
+- File names are sanitized before any shell operations (though the tool avoids shell operations: it uses Python's `os.rename()` and `pathlib` directly).
 - Generated file names are validated against the cross-platform naming rules before execution.
 
 ---
@@ -1732,7 +1732,7 @@ def validate_and_sanitize(proposed_name: str, extension: str) -> str:
 |------|-----------|
 | **Content analysis** | The process of uploading a file to Gemini and extracting a structured summary of its content. |
 | **Holistic naming** | Generating file names for ALL files in a folder simultaneously, with awareness of each other, to ensure names are distinct and complementary. |
-| **Naming context unit** | A single folder — the boundary within which files are named holistically. |
+| **Naming context unit** | A single folder: the boundary within which files are named holistically. |
 | **Manifest** | An ephemeral JSON file tracking the state of rename operations, enabling undo and crash recovery. |
 | **Dry-run** | Displaying proposed renames without executing them. The default mode of operation. |
 | **Atomic rename** | A rename operation guaranteed to either fully succeed or fully fail, with no intermediate state where the file is lost. |
@@ -1741,4 +1741,4 @@ def validate_and_sanitize(proposed_name: str, extension: str) -> str:
 
 ---
 
-*End of PRD — v1.0.0*
+*End of PRD: v1.0.0*

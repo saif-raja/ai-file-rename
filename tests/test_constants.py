@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.constants — format maps, naming rules, prompts."""
+"""Tests for ai_file_rename.constants: format maps, naming rules, prompts."""
 
 import re
 

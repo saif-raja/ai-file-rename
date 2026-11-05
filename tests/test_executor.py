@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.executor — safe rename execution and undo."""
+"""Tests for ai_file_rename.executor: safe rename execution and undo."""
 
 import errno
 import os
@@ -96,7 +96,7 @@ class TestExecuteRenames:
 
     def test_halt_on_missing_source(self, temp_dir):
         """Test that execution halts when source file is missing."""
-        # Don't create the file — it's missing
+        # Don't create the file: it's missing
         renames = [_make_validated("nonexistent.txt", "new.txt", temp_dir)]
         config = Config(gemini_api_key="test")
 
@@ -122,7 +122,7 @@ class TestExecuteRenames:
     def test_halt_stops_remaining(self, temp_dir):
         """Test that failure on one file halts the entire batch."""
         (temp_dir / "a.txt").write_text("a")
-        # b.txt doesn't exist — will cause failure
+        # b.txt doesn't exist: will cause failure
         (temp_dir / "c.txt").write_text("c")
 
         renames = [

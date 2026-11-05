@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.validator — name validation, sanitization, collision resolution."""
+"""Tests for ai_file_rename.validator: name validation, sanitization, collision resolution."""
 
 from pathlib import Path
 

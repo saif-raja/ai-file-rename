@@ -1,7 +1,7 @@
 """
 CLI entrypoint for ai-file-rename.
 
-Thin wrapper over RenameSession — handles interactive prompts, Rich display,
+Thin wrapper over RenameSession: handles interactive prompts, Rich display,
 and run reports. Does NOT contain business logic.
 """
 
@@ -51,7 +51,7 @@ def _phase_status(console, message: str):
             return
         except Exception:
             pass
-    # Plain text fallback — structured for agent parsing
+    # Plain text fallback: structured for agent parsing
     print(f"[PHASE] {message} ...")
     yield
     print(f"[DONE]  {message}")
@@ -91,7 +91,7 @@ class RunReport:
         try:
             self._write()
         except OSError:
-            pass  # Non-fatal — don't crash the pipeline for a report write
+            pass  # Non-fatal: don't crash the pipeline for a report write
 
     def _write(self) -> None:
         from ai_file_rename.constants import COST_PER_TOKEN
@@ -258,7 +258,7 @@ def _display_impact_summary(impact, use_rich: bool = True) -> None:
         except ImportError:
             pass
 
-    # Plain text — structured key: value format for agent parsing
+    # Plain text: structured key: value format for agent parsing
     print(f"\n[IMPACT ASSESSMENT]")
     print(f"target_directory: {impact.target_directory}")
     print(f"mode: {'recursive' if impact.recursive else 'single_folder'}")
@@ -312,7 +312,7 @@ def _display_dry_run(renames, use_rich: bool = True) -> None:
             pass
 
     if not rich_available:
-        # Plain text — one line per rename, pipe-delimited for easy parsing
+        # Plain text: one line per rename, pipe-delimited for easy parsing
         print(f"\n[PROPOSED RENAMES] count={len(renames)}")
         for i, rename in enumerate(renames, 1):
             notes = ""
@@ -340,10 +340,10 @@ def _interactive_review(
         Tuple of (possibly-modified validated list, should_execute bool).
     """
     click.echo("\n" + "─" * 60)
-    click.echo(" [A] Approve all    — execute all proposed renames")
-    click.echo(" [R] Reject all     — abort, no changes")
-    click.echo(" [E] Edit           — review each file individually")
-    click.echo(" [S] Save & quit    — save plan to JSON for later")
+    click.echo(" [A] Approve all   : execute all proposed renames")
+    click.echo(" [R] Reject all    : abort, no changes")
+    click.echo(" [E] Edit          : review each file individually")
+    click.echo(" [S] Save & quit   : save plan to JSON for later")
     click.echo("─" * 60)
 
     choice = click.prompt(
@@ -390,7 +390,7 @@ def _edit_individually(validated: list) -> tuple[list, bool]:
         proposed = v.final_name
 
         if v.original.is_unchanged:
-            click.echo(f"  [{i}/{len(validated)}] {current} — unchanged, skipping")
+            click.echo(f"  [{i}/{len(validated)}] {current}: unchanged, skipping")
             kept.append(v)
             continue
 
@@ -487,7 +487,7 @@ def _display_execution_result(result, use_rich: bool = True) -> None:
         except ImportError:
             pass
 
-    # Plain text — structured for agent parsing
+    # Plain text: structured for agent parsing
     print(f"\n[EXECUTION SUMMARY]")
     print(f"total_files: {result.total_files}")
     print(f"files_renamed: {result.renamed}")
@@ -563,7 +563,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
     if log_level is not None:
         config_overrides["log_level"] = log_level.upper()
 
-    # Create RenameSession — handles config, client, run ID, logger
+    # Create RenameSession: handles config, client, run ID, logger
     session = RenameSession(
         target_dir=target_directory,
         recursive=recursive,
@@ -588,7 +588,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         )
         sys.exit(1)
 
-    # Create the stateful run report — rewritten at each phase transition
+    # Create the stateful run report: rewritten at each phase transition
     report = RunReport(target, run_id, config)
     report.recursive = recursive
     report.update("starting")
@@ -667,7 +667,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                 # Record resumed session in history and CSV ledger.
                 # Schema matches Session._record_history() / _record_csv_ledger()
                 # with zero tokens/cost (no API calls for resume).
-                # Note: recursive is unknown from manifest data — defaults to False.
+                # Note: recursive is unknown from manifest data, so it defaults to False.
                 logger.append_to_history({
                     "run_id": run_id,
                     "run_started_at": result.started_at.isoformat(),
@@ -759,10 +759,10 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
                 click.echo("Aborted.")
                 return
 
-    # Phases 2–6: Preprocess, analyze, name, validate (via Session)
+    # Phases 2-6: Preprocess, analyze, name, validate (via Session)
     report.update("analyzing", analyzed_count=discovery.impact.supported_files)
 
-    # Phase progress callback — drives Rich spinner + plain text output
+    # Phase progress callback: drives Rich spinner + plain text output
     _phase_messages = {
         "preprocessing": "Preprocessing {file_count} files",
         "context": "Building folder context",
@@ -806,7 +806,7 @@ def rename(target_directory, recursive, execute, headless, config_path, model,
         if prev_phase is not None:
             _print_done(prev_phase)
 
-        # Start new phase — update spinner if available, else print static line
+        # Start new phase: update spinner if available, else print static line
         if status_obj is not None:
             try:
                 status_obj.update(f"[bold cyan]{msg}...[/bold cyan]")

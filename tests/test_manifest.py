@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.manifest — ephemeral state management."""
+"""Tests for ai_file_rename.manifest: ephemeral state management."""
 
 import json
 from pathlib import Path

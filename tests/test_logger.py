@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.logger — session logging and global history."""
+"""Tests for ai_file_rename.logger: session logging and global history."""
 
 import csv
 import json

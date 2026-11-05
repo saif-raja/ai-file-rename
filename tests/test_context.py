@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.context — folder context building."""
+"""Tests for ai_file_rename.context: folder context building."""
 
 from pathlib import Path
 

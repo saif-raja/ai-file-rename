@@ -71,7 +71,7 @@ class TokenUsage:
 
 @dataclass
 class RenamePlan:
-    """The result of the analysis phase — a plan of proposed renames.
+    """The result of the analysis phase: a plan of proposed renames.
 
     Contains everything needed to display a dry-run preview and execute.
     """
@@ -300,7 +300,7 @@ class RenameSession:
             token_usage.merge(analysis_tokens)
             analyzed_count = sum(len(v) for v in analyzed.values())
             self.logger.info(
-                f"Phase: Content Analysis — {analyzed_count} files "
+                f"Phase: Content Analysis, {analyzed_count} files "
                 f"in {t_analysis:.1f}s"
             )
 
@@ -337,7 +337,7 @@ class RenameSession:
             token_usage.merge(naming_tokens)
             naming_count = sum(len(v) for v in proposed.values())
             self.logger.info(
-                f"Phase: Holistic Naming — {naming_count} names "
+                f"Phase: Holistic Naming, {naming_count} names "
                 f"across {len(proposed)} folders in {t_naming:.1f}s"
             )
 
@@ -366,7 +366,7 @@ class RenameSession:
         )
 
         self.logger.info(
-            f"Token usage — input: {token_usage.input_tokens:,}, "
+            f"Token usage: input: {token_usage.input_tokens:,}, "
             f"output: {token_usage.output_tokens:,}"
         )
 

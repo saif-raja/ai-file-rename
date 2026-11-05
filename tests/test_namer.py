@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.namer — holistic naming engine and strategy selection."""
+"""Tests for ai_file_rename.namer: holistic naming engine and strategy selection."""
 
 import json
 from pathlib import Path
@@ -520,7 +520,7 @@ class TestNameAllErrorHandling:
 
         config = Config(gemini_api_key="test")
 
-        # logger=None (default) — must NOT raise AttributeError
+        # logger=None (default): must NOT raise AttributeError
         results, _ = await name_all(
             {folder: [analyzed]},
             {folder: context},

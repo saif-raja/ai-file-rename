@@ -105,7 +105,7 @@ def build_symlink_map(
                     symlink_map[key] = []
                 symlink_map[key].append(entry)
             except (OSError, ValueError):
-                # Broken symlink or permission issue — skip
+                # Broken symlink or permission issue: skip
                 continue
 
     return symlink_map

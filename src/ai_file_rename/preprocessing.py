@@ -144,7 +144,7 @@ def preprocess(
             if not config.convert_office_docs and file_entry.extension in (
                 "docx", "pptx", "xlsx", "doc", "ppt", "xls"
             ):
-                # User opted out of office conversion — fall back to text extraction
+                # User opted out of office conversion: fall back to text extraction
                 processed_path = None
             else:
                 ext = file_entry.extension.lower()
@@ -161,7 +161,7 @@ def preprocess(
                     # If conversion fails, processed_path stays None (will use text fallback)
 
         elif file_entry.category == FileCategory.TEXT_EXTRACTABLE:
-            # Text files don't need conversion — content is read inline
+            # Text files don't need conversion: content is read inline
             processed_path = file_entry.path
 
         results.append(

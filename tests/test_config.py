@@ -1,4 +1,4 @@
-"""Tests for ai_file_rename.config — configuration loading and resolution."""
+"""Tests for ai_file_rename.config: configuration loading and resolution."""
 
 import os
 import tempfile

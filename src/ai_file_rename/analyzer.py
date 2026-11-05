@@ -1,7 +1,7 @@
 """
 Content analyzer for ai-file-rename.
 
-Sends files to Gemini for content analysis — the first of two LLM calls.
+Sends files to Gemini for content analysis: the first of two LLM calls.
 Handles batching, file uploads, and structured JSON responses.
 """
 
@@ -136,7 +136,7 @@ def _parse_content_summary(response_text: str) -> ContentSummary:
             except json.JSONDecodeError:
                 return ContentSummary(
                     content_type="unknown",
-                    primary_subject="Content analysis failed — could not parse response.",
+                    primary_subject="Content analysis failed: could not parse response.",
                     key_entities=[],
                     date_references=[],
                     language="unknown",
@@ -145,7 +145,7 @@ def _parse_content_summary(response_text: str) -> ContentSummary:
         else:
             return ContentSummary(
                 content_type="unknown",
-                primary_subject="Content analysis failed — could not parse response.",
+                primary_subject="Content analysis failed: could not parse response.",
                 key_entities=[],
                 date_references=[],
                 language="unknown",
@@ -275,7 +275,7 @@ async def _analyze_single_file(
         if mtime_before > 0 and mtime_after > 0 and mtime_after != mtime_before:
             summary = ContentSummary(
                 content_type="skipped",
-                primary_subject="File modified during processing — skipped for safety.",
+                primary_subject="File modified during processing: skipped for safety.",
                 key_entities=[],
                 date_references=[],
                 language="unknown",
@@ -307,7 +307,7 @@ async def _analyze_single_file(
 
         if logger:
             logger.info(
-                f"  [analyzed] {enriched.entry.name} — "
+                f"  [analyzed] {enriched.entry.name}: "
                 f"type: {summary.content_type}, "
                 f"confidence: {summary.confidence:.2f}, "
                 f"subject: {summary.primary_subject[:60]}"
@@ -323,7 +323,7 @@ async def _analyze_single_file(
         )
         if logger:
             logger.warning(
-                f"  [FAILED] {enriched.entry.name} — {str(e)[:100]}"
+                f"  [FAILED] {enriched.entry.name}: {str(e)[:100]}"
             )
     finally:
         if uploaded_file_name:

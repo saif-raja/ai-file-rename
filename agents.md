@@ -6,7 +6,7 @@
 
 ## Before You Start
 
-**Load `docs/operations-manual.md` into your context.** It contains the complete CLI reference: all commands, flags, configuration options, supported file types, naming strategies, and cost management. Do not re-derive this information — it is already documented there.
+**Load `docs/operations-manual.md` into your context.** It contains the complete CLI reference: all commands, flags, configuration options, supported file types, naming strategies, and cost management. Do not re-derive this information, it is already documented there.
 
 This file covers only what is NOT in the operations manual: agent-specific workflows, integration patterns, and operational guidance.
 
@@ -21,10 +21,10 @@ ai-rename rename <target_directory> -r -x -H -P
 ```
 
 Flags breakdown:
-- `-r` — recursive (process subdirectories)
-- `-x` — execute (actually rename files, not just dry-run)
-- `-H` — headless (skip all interactive prompts)
-- `-P` — plain output (structured text, no Rich formatting)
+- `-r`: recursive (process subdirectories)
+- `-x`: execute (actually rename files, not just dry-run)
+- `-H`: headless (skip all interactive prompts)
+- `-P`: plain output (structured text, no Rich formatting)
 
 For a safe preview first:
 
@@ -32,7 +32,7 @@ For a safe preview first:
 ai-rename rename <target_directory> -r -d -H -P
 ```
 
-`-d` overrides `-H`'s implicit execute — this gives you a dry-run with no prompts.
+`-d` overrides `-H`'s implicit execute: this gives you a dry-run with no prompts.
 
 ---
 
@@ -64,10 +64,10 @@ The report file is a markdown document with:
 
 The report file's **Status** field updates progressively. If you read it and see:
 
-- `starting` or `discovered` or `analyzing` — the pipeline is still running, API calls in progress
-- `proposed` — naming is done, execution may be pending
-- `completed` — renames executed, run finished
-- `dry-run-complete` — dry-run finished, no files modified
+- `starting` or `discovered` or `analyzing`: the pipeline is still running, API calls in progress
+- `proposed`: naming is done, execution may be pending
+- `completed`: renames executed, run finished
+- `dry-run-complete`: dry-run finished, no files modified
 
 ---
 
@@ -76,9 +76,9 @@ The report file's **Status** field updates progressively. If you read it and see
 Detailed per-file logs are written to `~/.ai-rename/logs/session-<run_id>.log`.
 
 Log levels:
-- **INFO** — per-file analysis results, per-file naming decisions, phase timing, run summary
-- **DEBUG** — prompt details, Gemini response parsing, word tokenization steps
-- **WARNING** — analysis failures, naming misses (files not found in Gemini response)
+- **INFO**: per-file analysis results, per-file naming decisions, phase timing, run summary
+- **DEBUG**: prompt details, Gemini response parsing, word tokenization steps
+- **WARNING**: analysis failures, naming misses (files not found in Gemini response)
 
 To get DEBUG output in the console, add `--verbose`:
 
@@ -94,7 +94,7 @@ ai-rename rename <dir> -r -x -H -P --verbose
 ai-rename undo <target_directory> -f
 ```
 
-This reverses the last executed rename operation using the stored manifest. Only works if the manifest file (`.ai-rename-manifest.json`) is still present — it is deleted after successful completion, so undo is only available if the run failed partway through.
+This reverses the last executed rename operation using the stored manifest. Only works if the manifest file (`.ai-rename-manifest.json`) is still present: it is deleted after successful completion, so undo is only available if the run failed partway through.
 
 ---
 
@@ -104,7 +104,7 @@ This reverses the last executed rename operation using the stored manifest. Only
 
 2. **Failed analysis = skipped, not corrupted.** If Gemini returns an error for a file (400, 429, etc.), that file is excluded from renaming entirely. It will appear in the report under "Analysis Failures."
 
-3. **Single-file folders skip the naming API call.** When a folder has exactly 1 processable file, the name is derived deterministically from the content analysis — no holistic naming LLM call. This saves cost.
+3. **Single-file folders skip the naming API call.** When a folder has exactly 1 processable file, the name is derived deterministically from the content analysis: no holistic naming LLM call. This saves cost.
 
 4. **The tool writes to the target directory.** Two artifacts: the report file (`.ai-rename-report-*.md`, persists) and the manifest (`.ai-rename-manifest.json`, cleaned up on success). Both are dotfiles excluded from the tool's own discovery.
 
