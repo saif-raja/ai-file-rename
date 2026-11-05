@@ -20,7 +20,7 @@ from pptx import Presentation
 from pptx.util import Inches
 import openpyxl
 
-BASE = "/Users/saifraja/Github/z misc/ai-file-rename/tests/fixtures/sample-files"
+BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample-files")
 
 
 def ensure_dir(path):

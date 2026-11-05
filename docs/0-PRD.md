@@ -722,7 +722,7 @@ The tool maintains state at two levels:
   "run_started_at": "2026-02-25T14:28:00Z",
   "run_completed_at": "2026-02-25T14:30:05Z",
   "hostname": "macbook-pro.local",
-  "username": "saifraja",
+  "username": "user",
   "pid": 42310,
   "tool_version": "1.0.0",
   "target_directory": "/Users/user/documents/research/",
