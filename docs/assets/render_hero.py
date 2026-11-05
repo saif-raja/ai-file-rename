@@ -28,8 +28,7 @@ renames = json.loads(RESPONSE.read_text())["renames"]
 
 console = Console(record=True, width=86, force_terminal=True, color_system="truecolor")
 console.print("[bold]$ ai-rename rename tests/fixtures/sample-files/mixed-folder[/bold]")
-for phase in ("Discovering files", "Analyzing file contents with Gemini", "Generating holistic names"):
-    console.print(f"[green]\u2713[/green] {phase}")
+console.print("[dim](impact summary and phase lines omitted)[/dim]")
 table = Table(title="PROPOSED RENAMES")
 table.add_column("#", justify="right", style="dim")
 table.add_column("Current Name", style="red")
@@ -38,7 +37,6 @@ table.add_column("Notes", style="yellow")
 for i, r in enumerate(renames, 1):
     table.add_row(str(i), r["current_name"], r["proposed_name"], "")
 console.print(table)
-console.print("[dim]Dry run. Nothing renamed. Pass -x to execute.[/dim]")
 
 (ASSETS / "hero.svg").write_text(console.export_svg(title="ai-rename"))
 (ASSETS / "hero.html").write_text(

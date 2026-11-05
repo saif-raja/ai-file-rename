@@ -480,8 +480,8 @@ The tool defaults to dry-run mode. No files are renamed unless you pass `--execu
 
 During execution, an ephemeral manifest file (`.ai-rename-manifest.json`) is written to the target directory:
 
-- Records each rename's status (`pending` → `completed`)
-- Enables crash recovery: if the process is interrupted, the next run detects the manifest and offers: **resume**, **undo**, or **discard**
+- Records each rename's status (`pending` → `in_progress` → `completed`)
+- Enables crash recovery: if the process is interrupted, the next interactive run detects the manifest and offers: **resume**, **undo**, or **discard** (a headless run discards it; see Interrupted Runs)
 - Automatically cleaned up on successful completion
 
 ### Undo
@@ -504,7 +504,7 @@ Reverses the renames recorded in the directory's manifest. The manifest exists o
 
 Each file rename follows this sequence:
 
-1. Record intent in manifest (status: `pending`)
+1. Record intent in manifest (status: `pending` → `in_progress`)
 2. Execute `os.rename()`
 3. Verify: old path gone, new path exists, file size unchanged
 4. Update any incoming symlinks
@@ -585,7 +585,7 @@ Set a cost ceiling with `--cost-limit` (default: $5.00 USD):
 ai-rename rename ~/files --cost-limit 2.00
 ```
 
-If the estimated cost exceeds the limit, the tool warns and asks for confirmation (or aborts in headless mode).
+If the estimated cost exceeds the limit, the tool warns and asks for confirmation. In headless mode (`-H`) it prints the warning and continues (`cli.py`, the cost check runs `click.confirm` only when not headless); the limit does not stop an unattended run.
 
 ### Minimizing Costs
 
@@ -643,11 +643,13 @@ All sessions are logged to `~/.ai-rename/logs/`:
 
 ### Interrupted Runs
 
-If a run is interrupted mid-rename, the next run in the same directory detects the manifest and offers:
+If a run is interrupted mid-rename, the next **interactive** run in the same directory detects the manifest and offers:
 
 - **Resume**: continue pending renames
 - **Undo**: reverse completed renames
 - **Discard**: delete the manifest and start fresh
+
+A **headless** run (`-H`) takes the discard branch without asking (`cli.py`, the `existing.is_interrupted` block): the manifest, and with it the undo of the interrupted run, is deleted before the new run starts. After an interruption, run interactively or `ai-rename undo` first.
 
 ---
 

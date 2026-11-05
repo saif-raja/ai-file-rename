@@ -24,7 +24,7 @@ uv run --frozen ruff check src tests
 uv run --frozen ai-rename --help
 ```
 
-Install the CLI for use rather than development: `uv tool install "ai-file-rename[full] @ ."` from the repo root (or the git URL once public). A `GEMINI_API_KEY` is required for any run that reaches Gemini; without one `ai-rename rename` prints an error and exits 1 before touching anything.
+Install the CLI for use rather than development: `uv tool install "ai-file-rename[full] @ ."` from the repo root (or the git URL once public). A `GEMINI_API_KEY` is required for any run that reaches Gemini; without one `ai-rename rename` prints an error and exits 1 before touching the target directory (it does create `~/.ai-rename/logs/` first, `logger.py`).
 
 ---
 
@@ -72,7 +72,7 @@ The report file is a markdown document with:
 - A markdown table of all proposed/executed renames
 - Token usage and cost
 
-**This is the authoritative record of what happened.** It is more reliable than parsing stdout because it is written atomically and contains structured data. The writer is `RunReport` in `cli.py`.
+**This is the authoritative record of what happened.** It is more reliable than parsing stdout because it is rewritten whole at each phase transition and contains structured data. The writer is `RunReport` in `cli.py`.
 
 ---
 
@@ -110,19 +110,19 @@ ai-rename rename <dir> -r -x -H -P --verbose
 ai-rename undo <target_directory> -f
 ```
 
-This reverses the renames recorded in the directory's manifest (`.ai-rename-manifest.json`). The manifest is deleted when a run completes with zero failures (`executor.py`, after the finalize step), so undo is available only for a run that was interrupted or had failures; after a clean run the command reports that there is nothing to undo, and the record of what moved is in `rename-history.jsonl`.
+This reverses the renames recorded in the directory's manifest (`.ai-rename-manifest.json`). The manifest is deleted when a run completes with zero failures (`executor.py`, after the finalize step), so undo is available only for a run that was interrupted or had failures; after a clean run the command reports that there is nothing to undo, and the record of what moved is in `rename-history.jsonl`. **A headless re-run deletes an interrupted run's manifest without asking** (`cli.py`, the `existing.is_interrupted` block takes the discard branch when `-H` is set), so after an interruption run `undo` first, never a second `-H` pass.
 
 ---
 
 ## Key Behaviors to Be Aware Of
 
-1. **Every processable file goes to Gemini, and every folder is named as a set.** There is no filename-based pre-filter and no single-file shortcut: one content-analysis call per file (`analyzer.py`), then one naming call per folder (`namer.py`, `name_folder`), whatever the folder's size. Files whose analysis came back as `error`, `unknown` or `skipped`, or with confidence below 0.1, are left out of the naming call and logged as `[skipped]` (`namer.py`, `name_folder`).
+1. **Every processable file goes to Gemini, and every folder is named as a set.** There is no filename-based pre-filter and no single-file shortcut: one content-analysis call per file (`analyzer.py`), then the folder is named together, in one call for folders of up to 50 files and in clustered, sampled or progressive batches above that (`namer.py`, `select_strategy`). Files whose analysis came back as `error`, `unknown` or `skipped`, or with confidence below 0.1, are left out of the naming call and logged as `[skipped]` (`namer.py`, `name_folder`).
 
 2. **Failed analysis = skipped, not corrupted.** If Gemini returns an error for a file (400, 429, etc.), that file is excluded from renaming entirely. It will appear in the report under "Analysis Failures."
 
 3. **The tool writes to the target directory.** Two artifacts: the report file (`.ai-rename-report-*.md`, persists) and the manifest (`.ai-rename-manifest.json`, cleaned up on success). Both are dotfiles excluded from the tool's own discovery (`config.py`, `exclude_patterns`).
 
-4. **Cost is controlled.** Default limit is $5.00 USD (`config.py`); override with `--cost-limit`. The default model is `gemini-2.5-flash`; the cheapest is `gemini-2.0-flash` (`--model gemini-2.0-flash`; prices in `constants.py`, `COST_PER_TOKEN`).
+4. **The cost limit is a prompt, not a stop.** Default limit is $5.00 USD (`config.py`); override with `--cost-limit`. When the estimate exceeds it, an interactive run asks before continuing; a headless run (`-H`) prints the warning and continues (`cli.py`, the cost check confirms only when not headless), so `--cost-limit` does not bound an unattended run; bound it with `--max-files` or `--include` instead. The default model is `gemini-2.5-flash`; the cheapest is `gemini-2.0-flash` (`--model gemini-2.0-flash`; prices in `constants.py`, `COST_PER_TOKEN`).
 
 ---
 
