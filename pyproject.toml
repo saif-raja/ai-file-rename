@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-file-rename"
 version = "1.0.0"
-description = "AI-powered file renaming using Google Gemini"
+description = "Rename files by their content, a whole folder at a time: a Gemini CLI that dry-runs by default and can undo."
 requires-python = ">=3.9"
 license = "MIT"
 
