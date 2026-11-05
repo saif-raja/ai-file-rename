@@ -382,18 +382,6 @@ The rename pipeline runs in 8 sequential phases:
 [9] Execution          Atomic renames with manifest tracking + symlink updates
 ```
 
-### Single-File Optimization
-
-When a folder contains exactly **1 file**, the tool skips the holistic naming API call entirely (phase 7). Instead, it derives the name deterministically from the content analysis summary. This saves one API call per single-file folder.
-
-**Important:** Even in single-file mode, the tool still processes:
-- Full folder metadata (parent path, breadcrumbs, hierarchy)
-- File metadata (EXIF, document properties, etc.)
-- Content analysis via Gemini (the first API call still runs)
-- All validation and safety checks
-
-Only the *second* LLM call (holistic naming) is skipped: not the folder context.
-
 ### Metadata Extraction
 
 The tool extracts rich metadata to inform naming:
@@ -428,8 +416,7 @@ The tool selects a naming strategy based on the number of files in each folder:
 
 | File Count | Strategy                 | Approach                                                  |
 |------------|--------------------------|-----------------------------------------------------------|
-| 1          | Single-File Optimization | Deterministic name from content summary (no LLM call)    |
-| 2-50       | FullHolisticStrategy     | One LLM call names all files together                    |
+| 1-50       | FullHolisticStrategy     | One LLM call names all files together                    |
 | 51-200     | ClusteredHolisticStrategy| Cluster by content type, name each cluster separately    |
 | 201-500    | SampledHolisticStrategy  | Sample 50 files, establish pattern, apply to rest         |
 | 500+       | ProgressiveHolisticStrategy | Sequential batches of 50 with accumulated context      |
@@ -504,7 +491,7 @@ ai-rename undo ~/photos        # Interactive confirmation
 ai-rename undo ~/photos -f     # Skip confirmation
 ```
 
-Reverses ALL renames from the last session by reading the manifest.
+Reverses the renames recorded in the directory's manifest. The manifest exists only while a run is in progress or after a run that was interrupted or had failures (`executor.py`); a run that completes with zero failures deletes it, so there is nothing to undo afterwards and the command reports that. Completed runs are recorded in `~/.ai-rename/logs/rename-history.jsonl` for manual reversal.
 
 ### Symlink Safety
 
@@ -604,8 +591,7 @@ If the estimated cost exceeds the limit, the tool warns and asks for confirmatio
 
 1. **Use `gemini-2.0-flash`** for the cheapest option: `--model gemini-2.0-flash`
 2. **Use `--include` to target specific file types**: `--include "*.jpg"`
-3. **Single-file optimization** automatically saves one API call per single-file folder
-4. **Always dry-run first** to see the impact assessment before committing
+3. **Always dry-run first** to see the impact assessment before committing
 
 ### API Limits
 
