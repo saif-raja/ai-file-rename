@@ -5,7 +5,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](pyproject.toml)
 [![Agent-first: AGENTS.md](https://img.shields.io/badge/agent--first-AGENTS.md-8A2BE2.svg)](AGENTS.md)
 
-Rename files by their content, a whole folder at a time: a Gemini CLI that dry-runs by default and can undo.
+Rename files by their content, a whole folder at a time: a Gemini CLI that dry-runs by default and is error-safe.
 
 ![A dry run over the mixed-folder test fixture: four generic names on the left, the names Gemini proposed on the right, nothing renamed](docs/assets/hero.png)
 
